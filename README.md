@@ -40,7 +40,7 @@ Flag	Description
 --winlink	Enables fallback public key discovery via Winlink email
 --verbose	Print debug information
 🧱 Project Structure
-
+```
 axauth/
 ├── axauth/
 │   ├── cli.py        # CLI argument handling and entrypoint
@@ -53,7 +53,7 @@ axauth/
 ├── pyproject.toml    # Poetry-based project metadata
 ├── README.md
 ├── LICENSE
-
+```
 🔐 Authentication Flow (Chattervox-style)
 
     The local client generates or loads a long-term Ed25519 private key.
