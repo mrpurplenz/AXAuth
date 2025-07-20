@@ -19,13 +19,17 @@
 
 ```bash
 axauth ax0 ZL1XYZ
-Basic connection, just like axcall.
+```
 
+Basic connection, just like axcall.
+```bash
 axauth ax0 ZL1XYZ --auth
+```
 
 Authenticated connection using the Chattervox protocol and a local keyring.
-
+```bash
 axauth ax0 ZL1XYZ --auth --winlink
+```
 
 If a public key isn’t found locally, attempt to retrieve it via Winlink email.
 🔧 Command Line Flags
