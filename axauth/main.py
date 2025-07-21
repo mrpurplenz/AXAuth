@@ -4,9 +4,10 @@ from axauth import protocol, crypto, axcall_wrapper
 import configparser
 import os
 import readline
+from axcall_wrapper import start_ax25_connection
 
 USER_CONFIG_PATH = os.path.expanduser("~/.config/axauth/axauth.conf")
-DEFAULT_CONFIG_PATH = "./axauth_default.conf"
+DEFAULT_CONFIG_PATH = "axauth/axauth_default.conf"
 
 def load_config():
     config = configparser.ConfigParser()
@@ -23,6 +24,17 @@ def load_config():
     
     return config
 
+def connect_to_peer(callsign):
+    print(f"Connecting to {callsign}...")
+
+    try:
+        result = start_ax25_connection(callsign)
+        return result  # Boolean True/False
+    except Exception as e:
+        print(f"Connection error: {e}")
+        return False
+
+
 def run_peer_terminal(local_call="N0CALL"):
     current_peer = None
     verified = False
@@ -37,13 +49,16 @@ def run_peer_terminal(local_call="N0CALL"):
             print("\nExiting.")
             break
 
+
+
         if line.startswith("/exit"):
             print("Goodbye.")
             break
         elif line.startswith("/connect"):
             _, call = line.split(maxsplit=1)
             current_peer = call
-            verified = True  # mock
+            connect_to_peer(call)
+            verified = True
             print(f"[info] Connected to {call} (verified).")
         elif line:
             print(f"[{local_call}] to [{current_peer}]: {line}")
@@ -52,9 +67,9 @@ def run_peer_terminal(local_call="N0CALL"):
 def main():
     config = load_config()
     mode = config['axauth'].get('mode', 'peer').lower()
-
+    local_call = config['axauth'].get('CALL', 'N0CALL').lower()
     if mode == 'peer':
-        run_peer_terminal()
+        run_peer_terminal(local_call)
     else:
         print(f"Mode '{mode}' not yet implemented.")
 
