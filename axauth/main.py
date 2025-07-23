@@ -4,8 +4,7 @@ from axauth import protocol, crypto, axcall_wrapper
 import configparser
 import os
 import readline
-from axcall_wrapper import start_ax25_connection
-
+from axsocket import start_ax25_socket_connection, start_terminal_session
 USER_CONFIG_PATH = os.path.expanduser("~/.config/axauth/axauth.conf")
 DEFAULT_CONFIG_PATH = "axauth/axauth_default.conf"
 
@@ -24,20 +23,22 @@ def load_config():
     
     return config
 
-def connect_to_peer(callsign):
-    print(f"Connecting to {callsign}...")
-
+def connect_to_peer(local_call, remote_call):
+    print(f"Connecting to {remote_call} from {local_call}...")
     try:
-        result = start_ax25_connection(callsign)
-        return result  # Boolean True/False
+        sock = start_ax25_socket_connection(local_call, remote_call)
+        return sock, True
     except Exception as e:
-        print(f"Connection error: {e}")
-        return False
+        print(f"COnnection error: {e}")
+        return None, False
 
+    #thread = start_terminal_session(sock)
+    #return (sock, thread), True
 
 def run_peer_terminal(local_call="N0CALL"):
     current_peer = None
     verified = False
+    session = None
 
     print(f"[{local_call}] AXAuth Terminal (peer mode). Type /exit to quit.")
 
@@ -49,21 +50,31 @@ def run_peer_terminal(local_call="N0CALL"):
             print("\nExiting.")
             break
 
-
-
         if line.startswith("/exit"):
+            if session:
+                session[0].close()
             print("Goodbye.")
             break
+
         elif line.startswith("/connect"):
+            if session:
+                session[0].close()
             _, call = line.split(maxsplit=1)
             current_peer = call
-            connect_to_peer(call)
-            verified = True
-            print(f"[info] Connected to {call} (verified).")
+            session, verified = connect_to_peer(local_call, call)
+            if verified:
+                print(f"[info] Connected to {call} (verified).")
+
+        elif line and session:
+            try:
+                session.send(line.encode("utf-8"))
+            except BrokenPipeError:
+                print("[error] Connection lost.")
+                session = None
+                current_peer = None
         elif line:
-            print(f"[{local_call}] to [{current_peer}]: {line}")
-        else:
-            continue
+            print("[warn] No active session. Use /connect CALLSIGN first.")
+
 def main():
     config = load_config()
     mode = config['axauth'].get('mode', 'peer').lower()
