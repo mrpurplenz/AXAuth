@@ -3,6 +3,11 @@ import ax25
 import ax25.ports
 import ax25.socket
 import threading
+import errno
+
+def normalize_message(data: bytes) -> str:
+    text = data.decode("utf-8", errors="replace")
+    return text.replace('\r\n', '\n').replace('\r', '\n')
 
 def start_ax25_socket_connection(local_call, remote_call):
     print(f"[debug] Creating AX.25 socket")
@@ -38,6 +43,25 @@ def depr_start_ax25_socket_connection(my_call, dest_call):
         return None
     return s
 
+def new_receive_loop():
+    print("[debug] Receive thread started")
+    while True:
+        try:
+            data = sock.recv(1024)
+            if not data:
+                print("\n[info] Connection closed by remote.")
+                break
+            print(normalize_message(data), end='', flush=True)
+        except OSError as e:
+            if e.errno == errno.ENOTCONN:
+                print("\n[info] Remote disconnected (socket closed).")
+            else:
+                print(f"\n[error] Receive error: {e}")
+            break
+        except Exception as e:
+            print(f"\n[error] Unexpected receive error: {e}")
+            break
+
 def start_terminal_session(sock):
     def receive_loop():
         print("[debug] Receive thread started")
@@ -47,11 +71,16 @@ def start_terminal_session(sock):
                 if not data:
                     print("\n[info] Connection closed by remote.")
                     break
-                #print(f"\n[recv] {data.decode(errors='ignore')}")
-                print(data.decode(errors='ignore'), end='', flush=True)
+                print(normalize_message(data), end ='', flush=True)
             except OSError as e:
-                print(f"[error] Receive error: {e}")
+                if e.errno == errno.ENOTCONN:
+                    print("\n[info] Remote disconnected (socket closed).")
+                else:
+                    print(f"\n[error] Receive error: {e}")
                 break
+
+                #print(f"[error] Receive error: {e}")
+                #break
 
     thread = threading.Thread(target=receive_loop, daemon=True)
     thread.start()
