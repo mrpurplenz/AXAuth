@@ -24,10 +24,12 @@ def load_config():
     return config
 
 def connect_to_peer(local_call, remote_call):
-    print(f"Connecting to {remote_call} from {local_call}...")
+    print(f"[info] Connecting to {remote_call} from {local_call}...")
     try:
-        sock = start_ax25_socket_connection(local_call, remote_call)
-        return sock, True
+        session = start_ax25_socket_connection(local_call, remote_call)
+        print(f"[info] Session established: {session}")
+        #recv_thread = start_terminal_session(sock)
+        return session, True
     except Exception as e:
         print(f"COnnection error: {e}")
         return None, False
@@ -58,16 +60,23 @@ def run_peer_terminal(local_call="N0CALL"):
 
         elif line.startswith("/connect"):
             if session:
+                print("[debug] Closing previous session socket.")
                 session[0].close()
-            _, call = line.split(maxsplit=1)
+            try:
+                _, call = line.split(maxsplit=1)
+            except ValueError:
+                print("[error] Usage: /connect CALLSIGN")
+                continue
             current_peer = call
             session, verified = connect_to_peer(local_call, call)
             if verified:
                 print(f"[info] Connected to {call} (verified).")
 
+
         elif line and session:
             try:
-                session.send(line.encode("utf-8"))
+                print(f"[debug] Sending: {line}")
+                session[0].send((line+"\r").encode("utf-8"))
             except BrokenPipeError:
                 print("[error] Connection lost.")
                 session = None
