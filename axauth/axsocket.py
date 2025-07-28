@@ -3,85 +3,86 @@ import ax25
 import ax25.ports
 import ax25.socket
 import threading
+import queue
 import errno
+import select
+from blessed import Terminal
 
 def normalize_message(data: bytes) -> str:
     text = data.decode("utf-8", errors="replace")
+    return (text+"\n")
     return text.replace('\r\n', '\n').replace('\r', '\n')
 
-def start_ax25_socket_connection(local_call, remote_call):
-    print(f"[debug] Creating AX.25 socket")
-    s = ax25.socket.Socket()
 
-    try:
-        print(f"[debug] Binding AX.25 socket to {local_call}")
-        s.bind(local_call, "ax25")
-    except Exception as e:
-        print(f"[error] Failed to bind socket to {local_call}: {e}")
-        pass
+class AX25Session:
 
-    try:
-        print(f"[debug] Connecting AX.25 socket to {remote_call}")
-        result=s.connect_ex(remote_call)
-        print(f"[debug] Connection of AX.25 socket returned {result}")
-    except Exception as e:
-        print(f"[error] Failed to connect socket to {remote_call}: {e}")
-        pass
+    def __init__(self, sock, remote_call, local_call):
+        self.sock = sock
+        self.remote_call = remote_call
+        self.local_call = local_call
+        self.recv_queue = queue.Queue()
+        self.running = True
+        self.thread = threading.Thread(target=self._receive_loop, daemon=True)
+        self.thread.start()
+        self.recv_queue.put(Terminal().cyan+f'[info] Connection from {local_call} to {remote_call} created')
+    def has_queue(self):
+        return not self.recv_queue.empty()
 
-    thread = start_terminal_session(s)
+    def has_data(self):
+        rlist, _, _ = select.select([self.sock], [], [], 0)  # non-blocking
+        return bool(rlist)
 
-    return (s, thread)
-
-def depr_start_ax25_socket_connection(my_call, dest_call):
-    s = ax25.socket.Socket(socket.AF_AX25, socket.SOCK_STREAM)
-    try:
-        s.bind((my_call, 0))  # 0 = default device
-        s.connect((dest_call, 0))
-        print(f"[info] Connected to {dest_call} via AX.25 socket.")
-    except OSError as e:
-        print(f"[error] AX.25 socket error: {e}")
-        return None
-    return s
-
-def new_receive_loop():
-    print("[debug] Receive thread started")
-    while True:
+    def recv_one(self, timeout=0.1):
         try:
-            data = sock.recv(1024)
-            if not data:
-                print("\n[info] Connection closed by remote.")
-                break
-            print(normalize_message(data), end='', flush=True)
-        except OSError as e:
-            if e.errno == errno.ENOTCONN:
-                print("\n[info] Remote disconnected (socket closed).")
-            else:
-                print(f"\n[error] Receive error: {e}")
-            break
-        except Exception as e:
-            print(f"\n[error] Unexpected receive error: {e}")
-            break
+            return self.recv_queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
 
-def start_terminal_session(sock):
-    def receive_loop():
-        print("[debug] Receive thread started")
-        while True:
+    def _receive_loop(self):
+        while self.running:
             try:
-                data = sock.recv(1024)
+                data = self.sock.recv(1024)
                 if not data:
-                    print("\n[info] Connection closed by remote.")
+                    self.recv_queue.put('[info] Connection closed by remote.')
+                    self.running = False
                     break
-                print(normalize_message(data), end ='', flush=True)
+                self.recv_queue.put(normalize_message(data))
             except OSError as e:
                 if e.errno == errno.ENOTCONN:
-                    print("\n[info] Remote disconnected (socket closed).")
+                    self.recv_queue.put('[info] Remote disconnected (socket closed).')
                 else:
-                    print(f"\n[error] Receive error: {e}")
+                    self.recv_queue.put(f'[error] Receive error: {e}')
+                self.running = False
+                break
+            except Exception as e:
+                self.recv_queue.put(f'[error] Unexpected receive error: {e}')
+                self.running = False
                 break
 
-                #print(f"[error] Receive error: {e}")
-                #break
+    def send(self, data: str):
+        try:
+            self.sock.send(data)
+        except Exception as e:
+            self.recv_queue.put(f'[error] Send {data} failed: {e}')
 
-    thread = threading.Thread(target=receive_loop, daemon=True)
-    thread.start()
-    return thread
+    def close(self):
+        self.running = False
+        self.sock.close()
+
+
+def start_ax25_socket_connection(local_call: str, remote_call: str) -> AX25Session:
+    s = ax25.socket.Socket()
+    try:
+        s.bind(local_call, "ax25")
+    except Exception as e:
+        raise RuntimeError(f"Failed to bind socket to {local_call}: {e}")
+
+    try:
+        result = s.connect_ex(remote_call)
+        if result != 0:
+            raise RuntimeError(f"Connection failed with result code {result}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to connect socket to {remote_call}: {e}")
+    
+    return AX25Session(sock=s, local_call=local_call, remote_call=remote_call)
+

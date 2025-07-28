@@ -1,8 +1,10 @@
+#crypto.py
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey
 )
 from cryptography.hazmat.primitives import serialization
 import os
+
 
 KEY_DIR = os.path.join(os.path.dirname(__file__), '../keys')
 PRIVATE_KEY_PATH = os.path.join(KEY_DIR, 'private.pem')
