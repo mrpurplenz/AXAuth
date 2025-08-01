@@ -14,6 +14,26 @@ DEFAULT_CONFIG_PATH = "axauth/axauth_default.conf"
 
 term = Terminal()
 
+message_colour_map = {
+    "info": term.cyan,
+    "error": term.red,
+    "warn": term.yellow,
+    "send_signed": term.green,
+    "send_unsigned": term.white,
+    "recv_unsigned": term.yellow,
+    "recv_signed_nopub": term.orange,
+    "recv_signed_failed_verification": term.red,
+    "recv_verified": term.green,
+    "system": term.magenta
+}
+log_colour_map = {
+    "unconnected_not_signing": term.orange,
+    "unconnected_signing": term.yellow,
+    "connected_not_signing": term.orange,
+    "connected_signing": term.green
+}
+
+
 # Define fixed zone heights (Y = number of rows, X = terminal width)
 HEADER_Y       = 1
 SEPARATOR_Y    = 1
@@ -33,52 +53,212 @@ MESSAGES_X     = term.width
 HEADER_START_Y     = 0
 MESSAGE_START_Y    = HEADER_START_Y + HEADER_Y
 SEPARATOR_START_Y  = MESSAGE_START_Y + MESSAGES_Y
-INPUT_LOG_START_Y  = SEPARATOR_START_Y + SEPARATOR_Y
-PROMPT_START_Y     = INPUT_LOG_START_Y + LOG_Y
+LOG_START_Y        = SEPARATOR_START_Y + SEPARATOR_Y
+PROMPT_START_Y     = LOG_START_Y + LOG_Y
 
 def draw_header(current_peer = None, signing_enabled = True):
-    call_label = current_peer or '-------- '
-    signing_label = "Signing"+term.green+" ON" if signing_enabled else "signing" + term.red+" OFF"
-    full_label = f" {call_label} | AXAuth by ZL2DRS | {signing_label}"
-
-    # Compute visible widths
-    label_len = len(full_label)
-
-    spacer_len = max(0, HEADER_X - label_len)+1
+    call_label = current_peer or ' -------- '
+    signing_colour = term.red
+    sign_string = "OFF"
     if signing_enabled:
-         spacer_len += 15
-    spacer = " " * spacer_len
+        signing_colour = term.green
+        sign_string = "ON"
+    author_string = "| AXAuth by ZL2DRS | Signing "
+    header_text_len = len(call_label + author_string + sign_string)
+    print(term.move_yx(0,0) + term.on_white + term.black + call_label + author_string + signing_colour + sign_string + term.clear_eol)
 
-    # Build the header in parts with white background
-    base_header = (
-        term.on_white + term.black +
-        full_label + spacer
-    )
+def draw_message_stack(message_stack):
+    print(term.move_yx(0,0))
+    for i, msgt in enumerate(message_stack[-MESSAGES_Y:]):
+        ansi_colour = message_colour_map[msgt[0]]
+        print(term.move_yx(MESSAGE_START_Y + i, 0) + term.normal + term.clear_eol + ansi_colour + msgt[1].ljust(MESSAGES_X))
 
-    # Ensure we only print up to terminal width
-    print(term.move_yx(0, 0) + base_header[:(HEADER_X+15)] + term.normal)
+def draw_log_stack(log_stack):
+    print(term.move_yx(0, 0))
 
-def draw_messages(messages):
-    for i, msg in enumerate(messages[-MESSAGES_Y:]):
-        
-        print(term.move_yx(2 + i, 0) + term.clear_eol + msg.ljust(MESSAGES_X))
+    num_log_lines = min(len(log_stack), LOG_Y)
+    num_blank_lines = LOG_Y - num_log_lines  # Always ≥ 0
 
-def draw_input_log(input_log):
-    for i, line in enumerate(input_log[-LOG_Y:]):
-        y = term.height - 3 - LOG_Y + i
-        print(term.move_yx(y, 0) + term.clear_eol + f"> {line}")
+    # Clear and print blank lines first
+    for i in range(num_blank_lines):
+        print(term.move_yx(LOG_START_Y + i, 0) + term.clear_eol)
+
+    # Now print the most recent log lines, bottom-aligned
+    recent_logs = log_stack[-num_log_lines:]
+    for i, logt in enumerate(recent_logs):
+        ansi_colour = log_colour_map.get(logt[0], term.normal)
+        line_y = LOG_START_Y + num_blank_lines + i
+        print(term.move_yx(line_y, 0) + term.clear_eol + ansi_colour + logt[1].ljust(MESSAGES_X))
 
 def draw_separator():
+    print(term.move_yx(0,0))
     print(term.move_yx(SEPARATOR_START_Y, 0) + term.normal + '-' * SEPARATOR_X)
 
-def draw_prompt(current_peer):
+def draw_prompt(current_peer,signing_enabled):
+    print(term.move_yx(0,0))
     prompt = f"{current_peer or 'unproto'}> "
-    print(term.move_yx(PROMPT_START_Y, 0) + term.clear_eol + prompt, end='', flush=True)
+    if current_peer:
+        if signing_enabled:
+            prompt_status = "connected_signing"
+        else:
+            prompt_status = "connected_not_signing"
+    else:
+        if signing_enabled:
+            prompt_status = "unconnected_signing"
+        else:
+            prompt_status = "unconnected_not_signing"
+    ansi_colour = log_colour_map.get(prompt_status, term.normal)
+    print(term.move_yx(PROMPT_START_Y, 0)  + ansi_colour + prompt, end='', flush=True)
     # Move cursor to after prompt
     print(term.move_yx(PROMPT_START_Y, len(prompt)), end='', flush=True)
     return len(prompt)
 
+def draw_input_buffer(input_buffer, prompt_len, displayed_input):
+    if input_buffer != displayed_input:
+        print(term.move_yx(0,0))
+        print(term.move_yx(PROMPT_START_Y, prompt_len) + input_buffer + term.clear_eol, end='', flush=True)
+        displayed_input = input_buffer
+    return displayed_input
+
+def fetch_input(input_buffer):
+    process_flag = False
+    ch = term.inkey(timeout=0.1)
+    if ch.name == 'KEY_ENTER':
+        process_flag = True
+    elif ch.name == 'KEY_BACKSPACE':
+        if input_buffer:
+            input_buffer = input_buffer[:-1]
+    elif ch.is_sequence:
+        pass
+        #continue
+    else:
+        input_buffer += ch
+    return input_buffer, process_flag
+
+def process_input(line,local_call,message_stack,session,signing_enabled,current_peer):
+    if line == "/exit":
+        if session:
+            session.close()
+        message_stack.append(("system","Goodbye."))
+        return "exit",message_stack
+    elif line.startswith("/connect"):
+        try:
+            _, call = line.split(maxsplit=1)
+        except ValueError:
+            message_stack.append(("error","[error] Usage: /connect CALLSIGN"))
+            #continue
+        current_peer = call
+        session = connect_to_peer(local_call, call)
+        message_stack.append(("info", f"[info] Connected to {call}"))
+    elif line.startswith("/sign"):
+        try:
+            _, state = line.split(maxsplit=1)
+            if state.lower() == "on":
+                signing_enabled = True
+                #CODE TO ENABLE SIGNING GOES HERE
+            elif state.lower() == "off":
+                signing_enabled = False
+                #CODE TO DISABLE SIGNING GOES HERE
+            else:
+                raise ValueError
+        except ValueError:
+            message_stack.append(("error","[error] Usage: /sign on|off"))
+            #continue
+        message_stack.append(("info", f"[info] Signing {'enabled' if signing_enabled else 'disabled'}"))
+    elif line and session:
+        #Sending data to the connected session
+        if signing_enabled:
+            ###attempt to sign the line here or return error
+            try:
+                session.send((line+"\r").encode("utf-8"))
+                message_stack.append(("send_signed", f"[>{current_peer or 'unproto'}] {line}"))
+            except BrokenPipeError:
+                message_stack.append(("error",f"[error] Connection lost."))
+                session = None
+                current_peer = None
+        else:
+            try:
+                session.send((line+"\r").encode("utf-8"))
+                message_stack.append(("send_unsigned", f"[>{current_peer or 'unproto'}] {line}"))
+            except BrokenPipeError:
+                message_stack.append(("error",f"[error] Connection lost."))
+                session = None
+                current_peer = None
+    elif line:
+        #Sending text as unproto (NOT YET IMPLIMENTED)
+        #TRY TO SEND UNPROTO MESSAGE THEN IF SUCCESSFUL POST THE FOLLOWING LINE
+        if signing_enabled:
+            message_stack.append(("send_signed", f"[>{current_peer or 'unproto'}] {line}"))
+        else:
+            message_stack.append(("send_unsigned", f"[>{current_peer or 'unproto'}] {line}"))
+        #IF unproto message not possible post the following warning
+        message_stack.append(("warn", "[warn*] Unproto not available yet and no active session. Enable unproto or /connect CALLSIGN first."))
+
+    if session:
+        return "connected", message_stack, session
+    else:
+        return "Success", message_stack, session
+
 def run_peer_terminal(local_call="N0CALL"):
+    current_peer = None
+    verified = False
+    session = None #could be stacked
+    signing_enabled = True
+
+    message_stack = []
+    input_log = []
+    log_stack = []
+    prompt = ">"
+    input_string = ""
+    displayed_input = ""
+
+    #message_stack.append(("info","information message"))
+    #message_stack.append(("system","system message"))
+    #log_stack.append(("unconnected_not_signing","unconnected and not signing input"))
+    #log_stack.append(("unconnected_signing", "unconnected and signing input"))
+    #log_stack.append(("connected_not_signing", "A connected but not signing input"))
+    #log_stack.append(("connected_signing", "Signing and connected to a station"))
+
+    with term.fullscreen(), term.cbreak():
+        print(term.clear)
+        input_buffer=''
+        print(term.hide_cursor(), end='', flush=True)
+        while True:
+            #print(term.home + term.clear)
+            draw_header(current_peer, signing_enabled)
+            draw_message_stack(message_stack)
+            draw_separator()
+            draw_log_stack(log_stack)
+            prompt_len = draw_prompt(current_peer,signing_enabled)
+            input_buffer, process_flag = fetch_input(input_buffer)
+            if process_flag:
+                # Determine status key
+                if current_peer:
+                    if signing_enabled:
+                        status = "connected_signing"
+                    else:
+                        status = "connected_not_signing"
+                else:
+                    if signing_enabled:
+                        status = "unconnected_signing"
+                    else:
+                        status = "unconnected_not_signing"
+                log_stack.append((status, input_buffer))
+                result, message_stack, session = process_input(input_buffer,local_call,message_stack,session,signing_enabled,current_peer)
+                if result == "exit":
+                    break
+                if result == "connected":
+                    current_peer = session.remote_call
+                input_buffer=""
+            displayed_input = draw_input_buffer(input_buffer, prompt_len, displayed_input)
+            #Drain the session thread
+            if session and session.has_queue():
+                while session and session.has_queue():
+                    incoming = session.recv_one()
+                    if incoming:
+                        message_stack.append(incoming)
+
+def depr_run_peer_terminal(local_call="N0CALL"):
     current_peer = None
     verified = False
     session = None
@@ -104,31 +284,17 @@ def run_peer_terminal(local_call="N0CALL"):
             #update separator
             draw_separator()
             # Initialise prompt 
-            prompt_len = draw_prompt(current_peer)
+            prompt_len = draw_prompt(current_peer,signing_enabled)
             # Input handling
             if not input_dirty:
                 inp = ''
+
             while True:
-                ch = term.inkey(timeout=0.1)
-                input_dirty=True
-                if ch.name == 'KEY_ENTER':
-                    input_dirty=False
+
+                inp , break_loop, input_dirty = input_loop(inp,prompt_len)
+                if break_loop:
                     break
-                elif ch.name == 'KEY_BACKSPACE':
-                    if inp:
-                        inp = inp[:-1]
-                        print(
-                            term.move_x(prompt_len) +
-                            inp.ljust(term.width - prompt_len),  # pad with spaces to erase leftovers
-                            end='',
-                            flush=True
-                        )
-                        print(term.move_x(prompt_len + len(inp)), end='', flush=True)
-                elif ch.is_sequence:
-                    continue
-                else:
-                    inp += ch
-                    print(ch, end='', flush=True)
+
             if not input_dirty:
                 line = inp.strip()
                 if line == "/exit":
@@ -145,7 +311,7 @@ def run_peer_terminal(local_call="N0CALL"):
                     current_peer = call
                     #session = ("socket_object", "thread_obj")  # placeholder
                     session = connect_to_peer(local_call, call)
-                    draw_header(current_peer, signing_enabled)
+                    ###draw_header(current_peer, signing_enabled)
                     messages.append(term.cyan + f"[info] Connected to {call}" + term.normal)
                 elif line.startswith("/sign"):
                     try:
@@ -161,7 +327,7 @@ def run_peer_terminal(local_call="N0CALL"):
                     except ValueError:
                         messages.append(term.red + "[error] Usage: /sign on|off" + term.normal)
                         continue
-                    draw_header(current_peer, signing_enabled)
+                    ####draw_header(current_peer, signing_enabled)
                     messages.append(term.cyan + f"[info] Signing {'enabled' if signing_enabled else 'disabled'}" + term.normal)
                 elif line and session:
                     #Sending data to the connected session
@@ -174,7 +340,7 @@ def run_peer_terminal(local_call="N0CALL"):
                             messages.append(term.red +f("[error] Connection lost."))
                             session = None
                             current_peer = None
-                            draw_header(current_peer, session, signing_enabled)
+                            ###draw_header(current_peer, session, signing_enabled)
                     else:
                         try:
                             session.send((line+"\r").encode("utf-8"))
@@ -183,7 +349,7 @@ def run_peer_terminal(local_call="N0CALL"):
                             messages.append(term.red +f("[error] Connection lost.") + term.normal)
                             session = None
                             current_peer = None
-                            draw_header(current_peer, session, signing_enabled)
+                            ###draw_header(current_peer, session, signing_enabled)
                 elif line:
                     #Sending text as unproto (NOT YET IMPLIMENTED)
                     #TRY TO SEND UNPROTO MESSAGE THEN IF SUCCESSFUL POST THE FOLLOWING LINE
@@ -195,103 +361,9 @@ def run_peer_terminal(local_call="N0CALL"):
                     print(term.move_yx(y, 0) + term.clear_eol)
 
 
-
-def depriloop():
-    inp = ''
-    last_inp = None
-    while True:
-        #print(term.clear)
-
-        #Update header
-        draw_header(current_peer, signing_enabled)
-
-        # Drain the session thread queue
-        if session and session.has_queue():
-            while session.has_queue():
-                incoming = session.recv_one()
-                if incoming:
-                    messages.append(incoming)
-
-        draw_messages(messages)
-        draw_separator()
-        prompt_len = draw_prompt(current_peer)
-
-        # Poll for key input without blocking everything else
-        ch = term.inkey(timeout=1)
-
-        # Update prompt and rerender if input key depressed
-        if inp != last_inp:
-            print(term.move_x(prompt_len) + inp.ljust(term.width - prompt_len), end='', flush=True)
-            print(term.move_x(prompt_len + len(inp)), end='', flush=True)
-            last_inp = inp
-
-        if ch:
-            if ch.name == 'KEY_ENTER':
-                line = inp.strip()
-                inp = ''  # Reset input buffer
-
-                if line == "/exit":
-                    if session:
-                        session.close()
-                    messages.append("Goodbye.")
-                    break
-
-                elif line.startswith("/connect"):
-                    try:
-                        _, call = line.split(maxsplit=1)
-                        current_peer = call
-                        session = connect_to_peer(local_call, call)
-                        messages.append(term.cyan + f"[info] Connected to {call}" + term.normal)
-                    except ValueError:
-                        messages.append(term.red + "[error] Usage: /connect CALLSIGN" + term.normal)
-
-                elif line.startswith("/sign"):
-                    try:
-                        _, state = line.split(maxsplit=1)
-                        if state.lower() == "on":
-                            signing_enabled = True
-                        elif state.lower() == "off":
-                            signing_enabled = False
-                        else:
-                            raise ValueError
-                        messages.append(term.cyan + f"[info] Signing {'enabled' if signing_enabled else 'disabled'}" + term.normal)
-                    except ValueError:
-                        messages.append(term.red + "[error] Usage: /sign on|off" + term.normal)
-
-                elif line and session:
-                    try:
-                        session.send((line + "\r").encode("utf-8"))
-                        tag = "[>" + (current_peer or "unproto") + "]"
-                        color = term.green if signing_enabled else term.white
-                        messages.append(color + f"{tag} {line}" + term.normal)
-                    except BrokenPipeError:
-                        messages.append(term.red + "[error] Connection lost." + term.normal)
-                        session = None
-                        current_peer = None
-
-                elif line:
-                    messages.append(term.white + f"[>{current_peer or 'unproto'}] {line}" + term.normal)
-                    messages.append(term.yellow + "[warn] Unproto not available yet and no active session." + term.normal)
-
-                # Clear message area before re-render
-                for y in range(2, term.height - 2):
-                    print(term.move_yx(y, 0) + term.clear_eol)
-
-            elif ch.name == 'KEY_BACKSPACE':
-                if inp:
-                    inp = inp[:-1]
-                    print(term.move_x(prompt_len) + inp.ljust(term.width - prompt_len), end='', flush=True)
-                    print(term.move_x(prompt_len + len(inp)), end='', flush=True)
-
-            elif not ch.is_sequence:
-                inp += ch
-                print(ch, end='', flush=True)
-
-
-
 def load_config():
     config = configparser.ConfigParser()
-    
+
     if os.path.exists(USER_CONFIG_PATH):
         config.read(USER_CONFIG_PATH)
         #print(f"[info] Loaded config from {USER_CONFIG_PATH}")
@@ -301,7 +373,7 @@ def load_config():
     else:
         print("[warning] No config file found. Using built-in defaults.")
         config['axauth'] = {'mode': 'peer'}
-    
+
     return config
 
 def connect_to_peer(local_call, remote_call):
