@@ -1,3 +1,4 @@
+import cryptography
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 import os
@@ -5,6 +6,8 @@ import os
 KEY_DIR = os.path.join(os.path.dirname(__file__), '../keys')
 PRIVATE_KEY_PATH = os.path.join(KEY_DIR, 'private.pem')
 PUBLIC_KEY_PATH = os.path.join(KEY_DIR, 'public.pem')
+
+os.makedirs(os.path.dirname(PRIVATE_KEY_PATH), exist_ok=True)
 
 def generate_keypair():
     private_key = Ed25519PrivateKey.generate()
