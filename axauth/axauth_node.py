@@ -1,4 +1,4 @@
-#!/homw/zl2drs/venvs/axauth/bin/python
+#!/home/zl2drs/venvs/axauth/bin/python
 import sys, os, select, fcntl, time
 def flush_print(*args):
     print(*args, flush=True)
