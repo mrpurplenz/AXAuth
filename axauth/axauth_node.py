@@ -1,6 +1,6 @@
 #!/home/zl2drs/venvs/axauth/bin/python
 import sys, os, select, fcntl, time
-#
+import crypto
 def flush_print(*args):
     print(*args, flush=True)
 def flush_print(s):
