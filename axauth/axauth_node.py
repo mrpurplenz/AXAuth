@@ -13,6 +13,7 @@ def main():
     flush_print("Type 'quit' to disconnect, type 'help' for a list of instructions")
     set_nonblocking(sys.stdin.fileno())
     buffer = ""
+    signing = False
     while True:
         try:
             data = sys.stdin.read(1)
@@ -22,6 +23,8 @@ def main():
             if data in ('\r', '\n'):
                 if buffer.strip().lower() == "quit":
                     break #could add a goodbye line here
+                elif buffer.strip().lower() == "sign":
+                    signing = True
                 elif buffer.strip().lower() == "help":
                     send_buff = "help : This list of commands\r"
                     send_buff += "quit : Leave the node to rejoin the living\r"
@@ -29,7 +32,7 @@ def main():
                     send_buff += "hunt : Go on a hunt for the 'Authentic' treasure (UNDERCONSTRUCTION)"
                     flush_print(send_buff)
                     flush_print("games: Open the authenticated games room (UNDERCONSTRUCTION)\r")
-                    flush_print("sign : Switch node mode to sign outgoing messages (CURRENTLY UNDERCONSTRUCTION)")
+                    flush_print("sign : Toggle node mode between signing outgoing messages (CURRENTLY UNDERCONSTRUCTION)")
                 else:
                     flush_print(f"receieved unkown command: {buffer}")
                 buffer = ""
