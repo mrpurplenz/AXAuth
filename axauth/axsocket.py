@@ -10,14 +10,15 @@ from blessed import Terminal
 import json
 from pathlib import Path
 from typing import Optional
+from crypto import load_private_key, sign_message
 
-KEYRING_PATH = Path.home() / ".config" / "axauth" / "keys.json"
+#KEYRING_PATH = Path.home() / ".config" / "axauth" / "keys.json"
 
-def load_keyring() -> dict[str, str]:
-    if not KEYRING_PATH.exists():
-        return {}
-    with open(KEYRING_PATH, 'r') as f:
-        return json.load(f)
+#def load_keyring() -> dict[str, str]:
+#    if not KEYRING_PATH.exists():
+#        return {}
+#    with open(KEYRING_PATH, 'r') as f:
+#        return json.load(f)
 
 #def get_public_key(callsign: str) -> str | None:
 #    return keyring.get(callsign.upper())
@@ -32,29 +33,28 @@ class AX25Session:
         self.thread = threading.Thread(target=self._receive_loop, daemon=True)
         self.thread.start()
         self.recv_queue.put(("info",f'[info] Connection from {local_call} to {remote_call} created'))
-        self.keyring = load_keyring()
-
+        #self.keyring = load_keyring()
+        self.private_key = load_private_key()
     def is_signed(self, message: str) -> bool:
-        self.recv_queue.put(("info","[info] Determining if signed"))
+        self.recv_queue.put(("info","[info] Determining if received messaged is signed"))
         return "-----BEGIN CHATSIG-----" in message and "-----END CHATSIG-----" in message
 
-    def extract_signature_and_payload(message: str) -> tuple[str, str]:
-        self.recv_queue.put(("info","[info] Extracting sig"))
-        lines = message.splitlines()
-        begin = lines.index("-----BEGIN CHATSIG-----")
-        end = lines.index("-----END CHATSIG-----")
-        signature = "\n".join(lines[begin+1:end]).strip()
-        payload = "\n".join(lines[end+1:]).strip()
-        return signature, payload
+    #def extract_signature_and_payload(message: str) -> tuple[str, str]:
+    #    self.recv_queue.put(("info","[info] Extracting sig"))
+    #    lines = message.splitlines()
+    #    begin = lines.index("-----BEGIN CHATSIG-----")
+    #    end = lines.index("-----END CHATSIG-----")
+    #    signature = "\n".join(lines[begin+1:end]).strip()
+    #    payload = "\n".join(lines[end+1:]).strip()
+    #    return signature, payload
 
-    def get_public_key(callsign: str) -> Optional[str]:
-        self.recv_queue.put(("info","[info] Getting public key"))
-
-        # Replace this with real keyring lookup
-        return self.keyring.get(callsign)
+    #def get_public_key(callsign: str) -> Optional[str]:
+    #    self.recv_queue.put(("info","[info] Getting public key"))
+    #    # Replace this with real keyring lookup
+    #    return self.keyring.get(callsign)
 
     def verify_signature(payload: str, signature: str, pubkey: str) -> bool:
-        self.recv_queue.put(("info","[infoattempting signature verification"))
+        self.recv_queue.put(("info","[info] attempting signature verification"))
         try:
             decoded_sig = base64.b64decode(signature)
             verifier = nacl.signing.VerifyKey(pubkey, encoder=nacl.encoding.Base64Encoder)
@@ -135,10 +135,32 @@ class AX25Session:
                 self.running = False
                 break
 
-    def send(self, data: str):
+    def send(self, data):
+        self.recv_queue.put(("info",f"[info] Send request received"))
         try:
-            self.recv_queue.put(("info",f"[info] Send request received"))
+            #self.recv_queue.put(("info",f"[info] Send request received"))
             self.sock.send(data)
+        except Exception as e:
+            self.recv_queue.put(("error",f"[error] Send {data} failed: {e}"))
+    def send_signed(self, data):
+        self.recv_queue.put(("info",f"[info] Signed send request received"))
+
+        # Sign the data
+        signature = sign_message(data, self.private_key)
+
+        # Wrap it in a standard format
+        # We'll use a simple signature block format for now
+        signed_payload = (
+            b"-----BEGIN CHATSIG-----\n"
+            + signature.hex().encode() + b"\n"
+            + b"-----END CHATSIG-----\n"
+            + data
+        )
+
+        # Send the signed payload
+        try:
+            self.sock.send(signed_payload)
+
         except Exception as e:
             self.recv_queue.put(("error",f"[error] Send {data} failed: {e}"))
 

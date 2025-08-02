@@ -140,7 +140,7 @@ def process_input(line,local_call,message_stack,session,signing_enabled,current_
         if session:
             session.close()
         message_stack.append(("system","Goodbye."))
-        return "exit",message_stack
+        return "exit", message_stack, session
     elif line.startswith("/connect"):
         try:
             _, call = line.split(maxsplit=1)
@@ -170,7 +170,7 @@ def process_input(line,local_call,message_stack,session,signing_enabled,current_
         if signing_enabled:
             ###attempt to sign the line here or return error
             try:
-                session.send((line+"\r").encode("utf-8"))
+                session.send_signed((line+"\r").encode("utf-8"))
                 message_stack.append(("send_signed", f"[>{current_peer or 'unproto'}] {line}"))
             except BrokenPipeError:
                 message_stack.append(("error",f"[error] Connection lost."))
