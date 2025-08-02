@@ -35,9 +35,11 @@ class AX25Session:
         self.keyring = load_keyring()
 
     def is_signed(self, message: str) -> bool:
+        self.recv_queue.put(("info","[info] Determining if signed"))
         return "-----BEGIN CHATSIG-----" in message and "-----END CHATSIG-----" in message
 
     def extract_signature_and_payload(message: str) -> tuple[str, str]:
+        self.recv_queue.put(("info","[info] Extracting sig"))
         lines = message.splitlines()
         begin = lines.index("-----BEGIN CHATSIG-----")
         end = lines.index("-----END CHATSIG-----")
@@ -46,10 +48,13 @@ class AX25Session:
         return signature, payload
 
     def get_public_key(callsign: str) -> Optional[str]:
+        self.recv_queue.put(("info","[info] Getting public key"))
+
         # Replace this with real keyring lookup
         return self.keyring.get(callsign)
 
     def verify_signature(payload: str, signature: str, pubkey: str) -> bool:
+        self.recv_queue.put(("info","[infoattempting signature verification"))
         try:
             decoded_sig = base64.b64decode(signature)
             verifier = nacl.signing.VerifyKey(pubkey, encoder=nacl.encoding.Base64Encoder)
