@@ -12,8 +12,10 @@ from cryptography.exceptions import InvalidSignature
 PROTOCOL_VERSION = "1.0"
 BEGIN_MARKER = "-----BEGIN CHATTERVOX SIGNED MESSAGE-----"
 END_MARKER = "-----END CHATTERVOX SIGNED MESSAGE-----"
+#KEY PATHS should have a single default location found in say crypto but be checked from config file
 KEYRING_PATH = os.path.expanduser("~/.chattervox/known_keys.json")
-
+KEY_DIR = os.path.join(os.path.dirname(__file__), '../keys')
+PRIVATE_KEY_PATH = os.path.join(KEY_DIR, 'private.pem')
 
 class AuthPacket:
     def __init__(self, callsign: str, message: str, version: str = PROTOCOL_VERSION):
@@ -40,17 +42,21 @@ class AuthPacket:
     def _signing_string(self) -> str:
         return f"ver:{self.version}\nfrom:{self.callsign}\nmsg:\n{self.message.strip()}"
 
-    def to_text(self) -> str:
-        if not self.signature_b64:
-            raise ValueError("Message must be signed before exporting.")
-        return (
-            f"{BEGIN_MARKER}\n"
-            f"ver:{self.version}\n"
-            f"sig:{self.signature_b64}\n"
-            f"from:{self.callsign}\n"
-            f"msg:\n{self.message.strip()}\n"
-            f"{END_MARKER}"
-        )
+    def to_text(self, signed: boolean) -> str:
+        if signed:
+            self.sign(load_private_key(PRIVATE_KEY_PATH))
+            if not self.signature_b64:
+                raise ValueError("Message must be signed before exporting.")
+            return (
+                f"{BEGIN_MARKER}\n"
+                f"ver:{self.version}\n"
+                f"sig:{self.signature_b64}\n"
+                f"from:{self.callsign}\n"
+                f"msg:\n{self.message.strip()}\n"
+                f"{END_MARKER}"
+            )
+        else:
+            return f"{self.message.strip()}\n"
 
     @classmethod
     def from_text(cls, text: str):

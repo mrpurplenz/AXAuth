@@ -12,21 +12,21 @@ CALL_SSID = CALL + "-" + SSID
 
 def flush_print(message_string,signing):
     packet = AuthPacket(CALL, message_string)
-    if signing:
-        private_key = load_private_key(PRIVATE_KEY_PATH)
-        message_data = message_string.encode("utf-8")
-        signature = sign_message(message_data, private_key)
-        signed_data = (
-            b"-----BEGIN CHATSIG-----\n"
-            + signature.hex().encode() + b"\n"
-            + b"-----END CHATSIG-----\n"
-            + message_data
-        )
-        signed_message = signed_data.decode("utf-8", errors="replace")
-        output = signed_message
-    else:
-        output = message_string
-    print(output, flush=True)
+    #if signing:
+    #    private_key = load_private_key(PRIVATE_KEY_PATH)
+    #    message_data = message_string.encode("utf-8")
+    #    signature = sign_message(message_data, private_key)
+    #    signed_data = (
+    #        b"-----BEGIN CHATSIG-----\n"
+    #        + signature.hex().encode() + b"\n"
+    #        + b"-----END CHATSIG-----\n"
+    #        + message_data
+    #    )
+    #    signed_message = signed_data.decode("utf-8", errors="replace")
+    #    output = signed_message
+    #else:
+    #    output = message_string
+    print(packet.to_text(signing), flush=True)
 
 def set_nonblocking(fd):
     fl = fcntl.fcntl(fd, fcntl.F_GETFL)
