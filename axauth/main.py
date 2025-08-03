@@ -13,148 +13,150 @@ USER_CONFIG_PATH = os.path.expanduser("~/.config/axauth/axauth.conf")
 DEFAULT_CONFIG_PATH = "axauth/axauth_default.conf"
 
 term = Terminal()
+def render_terminal(current_peer, signing_enabled, message_stack, log_stack, term):
 
-message_colour_map = {
-    "info": term.cyan,
-    "error": term.red,
-    "warn": term.yellow,
-    "send_signed": term.green,
-    "send_unsigned": term.white,
-    "recv_unsigned": term.yellow,
-    "recv_signed_nopub": term.orange,
-    "recv_signed_failed_verification": term.red,
-    "recv_verified": term.green,
-    "system": term.magenta
-}
-log_colour_map = {
-    "unconnected_not_signing": term.orange,
-    "unconnected_signing": term.yellow,
-    "connected_not_signing": term.orange,
-    "connected_signing": term.green
-}
+    message_colour_map = {
+        "info": term.cyan,
+        "error": term.red,
+        "warn": term.yellow,
+        "send_signed": term.green,
+        "send_unsigned": term.white,
+        "recv_unsigned": term.yellow,
+        "recv_signed_nopub": term.orange,
+        "recv_signed_failed_verification": term.red,
+        "recv_verified": term.green,
+        "system": term.magenta
+    }
+    log_colour_map = {
+        "unconnected_not_signing": term.orange,
+        "unconnected_signing": term.yellow,
+        "connected_not_signing": term.orange,
+        "connected_signing": term.green
+    }
 
-CURRENT_TERM_WIDTH  = term.width
-CURRENT_TERM_HEIGHT = term.height
+    CURRENT_TERM_WIDTH  = term.width
+    CURRENT_TERM_HEIGHT = term.height
 
+    # Define fixed zone heights (Y = number of rows, X = terminal width)
+    HEADER_Y       = 1
+    SEPARATOR_Y    = 1
+    LOG_Y          = 6  # Lines reserved for the input log
+    PROMPT_Y       = 1
 
-# Define fixed zone heights (Y = number of rows, X = terminal width)
-HEADER_Y       = 1
-SEPARATOR_Y    = 1
-LOG_Y          = 6  # Lines reserved for the input log
-PROMPT_Y       = 1
+    # Terminal width (constant across zones)
+    HEADER_X       = CURRENT_TERM_WIDTH
+    SEPARATOR_X    = CURRENT_TERM_WIDTH
+    LOG_X          = CURRENT_TERM_WIDTH
+    PROMPT_X       = CURRENT_TERM_WIDTH
 
-# Terminal width (constant across zones)
-HEADER_X       = CURRENT_TERM_WIDTH
-SEPARATOR_X    = CURRENT_TERM_WIDTH
-LOG_X          = CURRENT_TERM_WIDTH
-PROMPT_X       = CURRENT_TERM_WIDTH
+    # Dynamically compute available height for messages
+    MESSAGES_Y     = CURRENT_TERM_HEIGHT - (HEADER_Y + SEPARATOR_Y + LOG_Y + PROMPT_Y)
+    MESSAGES_X     = CURRENT_TERM_WIDTH
 
-# Dynamically compute available height for messages
-MESSAGES_Y     = CURRENT_TERM_HEIGHT - (HEADER_Y + SEPARATOR_Y + LOG_Y + PROMPT_Y)
-MESSAGES_X     = CURRENT_TERM_WIDTH
+    HEADER_START_Y     = 0
+    MESSAGE_START_Y    = HEADER_START_Y + HEADER_Y
+    SEPARATOR_START_Y  = MESSAGE_START_Y + MESSAGES_Y
+    LOG_START_Y        = SEPARATOR_START_Y + SEPARATOR_Y
+    PROMPT_START_Y     = LOG_START_Y + LOG_Y
 
-HEADER_START_Y     = 0
-MESSAGE_START_Y    = HEADER_START_Y + HEADER_Y
-SEPARATOR_START_Y  = MESSAGE_START_Y + MESSAGES_Y
-LOG_START_Y        = SEPARATOR_START_Y + SEPARATOR_Y
-PROMPT_START_Y     = LOG_START_Y + LOG_Y
-
-def draw_header(current_peer = None, signing_enabled = True):
-    call_label = current_peer or ' -------- '
-    signing_colour = term.red
-    sign_string = "OFF"
-    if signing_enabled:
-        signing_colour = term.green
-        sign_string = "ON"
-    author_string = "| AXAuth by ZL2DRS | Signing "
-    header_text_len = len(call_label + author_string + sign_string)
-    print(term.move_yx(0,0) + term.on_white + term.black + call_label + author_string + signing_colour + sign_string + term.clear_eol)
-
-#def draw_message_stack(message_stack):
-#    print(term.move_yx(0,0))
-#    for i, msgt in enumerate(message_stack[-MESSAGES_Y:]):
-#        ansi_colour = message_colour_map[msgt[0]]
-#        print(term.move_yx(MESSAGE_START_Y + i, 0) + term.normal + term.clear_eol + ansi_colour + msgt[1].ljust(MESSAGES_X))
-
-
-from textwrap import wrap
-
-def draw_message_stack(message_stack):
-    print(term.move_yx(0, 0))
-    visible_rows = []
-
-    # First, wrap each message into lines that fit terminal width
-    for msgt in message_stack:
-        status, text = msgt
-        #prefix = f"{callsign}: "
-        ansi_colour = message_colour_map[status]
-
-        # Wrap text (taking prefix into account for first line)
-        wrapped_lines = wrap(text, width=MESSAGES_X)
-        if not wrapped_lines:
-            wrapped_lines = [""]
-
-        # Build first and subsequent lines
-        first_line = ansi_colour +  wrapped_lines[0]
-        other_lines = [ansi_colour + line for line in wrapped_lines[1:]]
-
-        #Restack the now-wrapped messages
-        visible_rows.extend([first_line] + other_lines)
-
-    # Trim to fit available space
-    rows_to_draw = visible_rows[-MESSAGES_Y:]
-
-    # Now render the lines on screen
-    for i, line in enumerate(rows_to_draw):
-        print(term.move_yx(MESSAGE_START_Y + i, 0) + term.normal + term.clear_eol + line.ljust(MESSAGES_X))
-
-
-def draw_log_stack(log_stack):
-    print(term.move_yx(0, 0))
-
-    num_log_lines = min(len(log_stack), LOG_Y)
-    num_blank_lines = LOG_Y - num_log_lines  # Always ≥ 0
-
-    # Clear and print blank lines first
-    for i in range(num_blank_lines):
-        print(term.move_yx(LOG_START_Y + i, 0) + term.clear_eol)
-
-    # Now print the most recent log lines, bottom-aligned
-    recent_logs = log_stack[-num_log_lines:]
-    for i, logt in enumerate(recent_logs):
-        ansi_colour = log_colour_map.get(logt[0], term.normal)
-        line_y = LOG_START_Y + num_blank_lines + i
-        print(term.move_yx(line_y, 0) + term.clear_eol + ansi_colour + logt[1].ljust(MESSAGES_X))
-
-def draw_separator():
-    print(term.move_yx(0,0))
-    print(term.move_yx(SEPARATOR_START_Y, 0) + term.normal + '-' * SEPARATOR_X)
-
-def draw_prompt(current_peer,signing_enabled):
-    print(term.move_yx(0,0))
-    prompt = f"{current_peer or 'unproto'}> "
-    if current_peer:
+    def draw_header(current_peer = None, signing_enabled = True):
+        call_label = current_peer or ' -------- '
+        signing_colour = term.red
+        sign_string = "OFF"
         if signing_enabled:
-            prompt_status = "connected_signing"
-        else:
-            prompt_status = "connected_not_signing"
-    else:
-        if signing_enabled:
-            prompt_status = "unconnected_signing"
-        else:
-            prompt_status = "unconnected_not_signing"
-    ansi_colour = log_colour_map.get(prompt_status, term.normal)
-    print(term.move_yx(PROMPT_START_Y, 0)  + ansi_colour + prompt, end='', flush=True)
-    # Move cursor to after prompt
-    print(term.move_yx(PROMPT_START_Y, len(prompt)), end='', flush=True)
-    return len(prompt)
+            signing_colour = term.green
+            sign_string = "ON"
+        author_string = "| AXAuth by ZL2DRS | Signing "
+        header_text_len = len(call_label + author_string + sign_string)
+        print(term.move_yx(0,0) + term.on_white + term.black + call_label + author_string + signing_colour + sign_string + term.clear_eol)
 
-def draw_input_buffer(input_buffer, prompt_len, displayed_input):
+    from textwrap import wrap
+
+    def draw_message_stack(message_stack):
+        print(term.move_yx(0, 0))
+        visible_rows = []
+
+        # First, wrap each message into lines that fit terminal width
+        for msgt in message_stack:
+            status, text = msgt
+            #prefix = f"{callsign}: "
+            ansi_colour = message_colour_map[status]
+
+            # Wrap text (taking prefix into account for first line)
+            wrapped_lines = wrap(text, width=MESSAGES_X)
+            if not wrapped_lines:
+                wrapped_lines = [""]
+
+            # Build first and subsequent lines
+            first_line = ansi_colour +  wrapped_lines[0]
+            other_lines = [ansi_colour + line for line in wrapped_lines[1:]]
+
+            #Restack the now-wrapped messages
+            visible_rows.extend([first_line] + other_lines)
+
+        # Trim to fit available space
+        rows_to_draw = visible_rows[-MESSAGES_Y:]
+
+        # Now render the lines on screen
+        for i, line in enumerate(rows_to_draw):
+            print(term.move_yx(MESSAGE_START_Y + i, 0) + term.normal + term.clear_eol + line.ljust(MESSAGES_X))
+
+    def draw_log_stack(log_stack):
+        print(term.move_yx(0, 0))
+
+        num_log_lines = min(len(log_stack), LOG_Y)
+        num_blank_lines = LOG_Y - num_log_lines  # Always ≥ 0
+
+        # Clear and print blank lines first
+        for i in range(num_blank_lines):
+            print(term.move_yx(LOG_START_Y + i, 0) + term.clear_eol)
+
+        # Now print the most recent log lines, bottom-aligned
+        recent_logs = log_stack[-num_log_lines:]
+        for i, logt in enumerate(recent_logs):
+            ansi_colour = log_colour_map.get(logt[0], term.normal)
+            line_y = LOG_START_Y + num_blank_lines + i
+            print(term.move_yx(line_y, 0) + term.clear_eol + ansi_colour + logt[1].ljust(MESSAGES_X))
+
+    def draw_separator():
+        print(term.move_yx(0,0))
+        print(term.move_yx(SEPARATOR_START_Y, 0) + term.normal + '-' * SEPARATOR_X)
+
+    def draw_prompt(current_peer,signing_enabled):
+        print(term.move_yx(0,0))
+        prompt = f"{current_peer or 'unproto'}> "
+        if current_peer:
+            if signing_enabled:
+                prompt_status = "connected_signing"
+            else:
+                prompt_status = "connected_not_signing"
+        else:
+            if signing_enabled:
+                prompt_status = "unconnected_signing"
+            else:
+                prompt_status = "unconnected_not_signing"
+        ansi_colour = log_colour_map.get(prompt_status, term.normal)
+        print(term.move_yx(PROMPT_START_Y, 0)  + ansi_colour + prompt, end='', flush=True)
+        # Move cursor to after prompt
+        print(term.move_yx(PROMPT_START_Y, len(prompt)), end='', flush=True)
+        return len(prompt)
+
+    #Conduct rendering in turn
+    draw_header(current_peer, signing_enabled)
+    draw_message_stack(message_stack)
+    draw_separator()
+    draw_log_stack(log_stack)
+    prompt_len = draw_prompt(current_peer,signing_enabled)
+
+    return prompt_len, PROMPT_START_Y
+
+def render_input_buffer(input_buffer, prompt_len, displayed_input, PROMPT_START_Y):
     if input_buffer != displayed_input:
         print(term.move_yx(0,0))
         print(term.move_yx(PROMPT_START_Y, prompt_len) + input_buffer + term.clear_eol, end='', flush=True)
         displayed_input = input_buffer
     return displayed_input
+
 
 def fetch_input(input_buffer):
     process_flag = False
@@ -261,11 +263,14 @@ def run_peer_terminal(local_call="N0CALL"):
         print(term.hide_cursor(), end='', flush=True)
         while True:
             #print(term.home + term.clear)
-            draw_header(current_peer, signing_enabled)
-            draw_message_stack(message_stack)
-            draw_separator()
-            draw_log_stack(log_stack)
-            prompt_len = draw_prompt(current_peer,signing_enabled)
+            prompt_len, PROMPT_START_Y = render_terminal(current_peer, signing_enabled, message_stack, log_stack, term)
+
+            #draw_header(current_peer, signing_enabled)
+            #draw_message_stack(message_stack)
+            #draw_separator()
+            #draw_log_stack(log_stack)
+            #prompt_len = draw_prompt(current_peer,signing_enabled)
+
             input_buffer, process_flag = fetch_input(input_buffer)
             if process_flag:
                 # Determine status key
@@ -286,7 +291,9 @@ def run_peer_terminal(local_call="N0CALL"):
                 if result == "connected":
                     current_peer = session.remote_call
                 input_buffer=""
-            displayed_input = draw_input_buffer(input_buffer, prompt_len, displayed_input)
+
+            displayed_input = render_input_buffer(input_buffer, prompt_len, displayed_input, PROMPT_START_Y)
+
             #Drain the session thread
             if session and session.has_queue():
                 while session and session.has_queue():
