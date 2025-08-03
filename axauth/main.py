@@ -33,6 +33,9 @@ log_colour_map = {
     "connected_signing": term.green
 }
 
+CURRENT_TERM_WIDTH  = term.width
+CURRENT_TERM_HEIGHT = term.height
+
 
 # Define fixed zone heights (Y = number of rows, X = terminal width)
 HEADER_Y       = 1
@@ -41,14 +44,14 @@ LOG_Y          = 6  # Lines reserved for the input log
 PROMPT_Y       = 1
 
 # Terminal width (constant across zones)
-HEADER_X       = term.width
-SEPARATOR_X    = term.width
-LOG_X          = term.width
-PROMPT_X       = term.width
+HEADER_X       = CURRENT_TERM_WIDTH
+SEPARATOR_X    = CURRENT_TERM_WIDTH
+LOG_X          = CURRENT_TERM_WIDTH
+PROMPT_X       = CURRENT_TERM_WIDTH
 
 # Dynamically compute available height for messages
-MESSAGES_Y     = term.height - (HEADER_Y + SEPARATOR_Y + LOG_Y + PROMPT_Y)
-MESSAGES_X     = term.width
+MESSAGES_Y     = CURRENT_TERM_HEIGHT - (HEADER_Y + SEPARATOR_Y + LOG_Y + PROMPT_Y)
+MESSAGES_X     = CURRENT_TERM_WIDTH
 
 HEADER_START_Y     = 0
 MESSAGE_START_Y    = HEADER_START_Y + HEADER_Y
@@ -67,11 +70,44 @@ def draw_header(current_peer = None, signing_enabled = True):
     header_text_len = len(call_label + author_string + sign_string)
     print(term.move_yx(0,0) + term.on_white + term.black + call_label + author_string + signing_colour + sign_string + term.clear_eol)
 
+#def draw_message_stack(message_stack):
+#    print(term.move_yx(0,0))
+#    for i, msgt in enumerate(message_stack[-MESSAGES_Y:]):
+#        ansi_colour = message_colour_map[msgt[0]]
+#        print(term.move_yx(MESSAGE_START_Y + i, 0) + term.normal + term.clear_eol + ansi_colour + msgt[1].ljust(MESSAGES_X))
+
+
+from textwrap import wrap
+
 def draw_message_stack(message_stack):
-    print(term.move_yx(0,0))
-    for i, msgt in enumerate(message_stack[-MESSAGES_Y:]):
-        ansi_colour = message_colour_map[msgt[0]]
-        print(term.move_yx(MESSAGE_START_Y + i, 0) + term.normal + term.clear_eol + ansi_colour + msgt[1].ljust(MESSAGES_X))
+    print(term.move_yx(0, 0))
+    visible_rows = []
+
+    # First, wrap each message into lines that fit terminal width
+    for msgt in message_stack:
+        status, text = msgt
+        #prefix = f"{callsign}: "
+        ansi_colour = message_colour_map[status]
+
+        # Wrap text (taking prefix into account for first line)
+        wrapped_lines = wrap(text, width=MESSAGES_X)
+        if not wrapped_lines:
+            wrapped_lines = [""]
+
+        # Build first and subsequent lines
+        first_line = ansi_colour +  wrapped_lines[0]
+        other_lines = [ansi_colour + line for line in wrapped_lines[1:]]
+
+        #Restack the now-wrapped messages
+        visible_rows.extend([first_line] + other_lines)
+
+    # Trim to fit available space
+    rows_to_draw = visible_rows[-MESSAGES_Y:]
+
+    # Now render the lines on screen
+    for i, line in enumerate(rows_to_draw):
+        print(term.move_yx(MESSAGE_START_Y + i, 0) + term.normal + term.clear_eol + line.ljust(MESSAGES_X))
+
 
 def draw_log_stack(log_stack):
     print(term.move_yx(0, 0))
