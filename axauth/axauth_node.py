@@ -1,13 +1,17 @@
 #!/home/zl2drs/venvs/axauth/bin/python
 import sys, os, select, fcntl, time
 from crypto import load_private_key, sign_message
-
+from authpacket import AuthPacket
 #def flush_print(*args):
 #    print(*args, flush=True)
 KEY_DIR = os.path.join(os.path.dirname(__file__), '../keys')
 PRIVATE_KEY_PATH = os.path.join(KEY_DIR, 'private.pem')
+CALL = "ZL2DRS"
+SSID = "11"
+CALL_SSID = CALL + "-" + SSID
 
 def flush_print(message_string,signing):
+    packet = AuthPacket(CALL, message_string)
     if signing:
         private_key = load_private_key(PRIVATE_KEY_PATH)
         message_data = message_string.encode("utf-8")
