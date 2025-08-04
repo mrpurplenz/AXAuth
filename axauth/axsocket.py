@@ -35,6 +35,7 @@ class AX25Session:
         self.recv_queue.put(("info",f'[info] Connection from {local_call} to {remote_call} created'))
         #self.keyring = load_keyring()
         self.private_key = load_private_key()
+
     def is_signed(self, message: str) -> bool:
         self.recv_queue.put(("warn","[depricated, use authpacket] Determining if received messaged is signed"))
         return "-----BEGIN CHATSIG-----" in message and "-----END CHATSIG-----" in message
@@ -124,16 +125,16 @@ class AX25Session:
                 #messages = self.normalize_message(data)
 
                 #authpacket message handling
+                self.recv_queue.put(("info", "[Info] Packet received - decoding..."))
                 packet = AuthPacket.from_text(data.decode("utf-8", errors="replace"))
-                if packet.is_signed():
+                if packet.has_signature():
                     callsign = packet.callsign()
                     if packet.have_public_key(callsign):
                         public_key = packet.public_key()
                         if packet.is_valid(public_key):
                            self.recv_queue.put(("recv_signed_verified", packet.message))
-
-
-
+                else:
+                    self.recv_queue.put(("recv_unsigned", packet.message))
 
             except OSError as e:
                 if e.errno == errno.ENOTCONN:
@@ -156,12 +157,13 @@ class AX25Session:
             self.recv_queue.put(("error",f"[error] Send {packet.to_text(False)} failed: {e}"))
 
     def send(self, data):
-        self.recv_queue.put(("info",f"[info] Send request received"))
+        self.recv_queue.put(("warn",f"[info] basic sending is depricated, use auth packet"))
         try:
             #self.recv_queue.put(("info",f"[info] Send request received"))
             self.sock.send(data)
         except Exception as e:
             self.recv_queue.put(("error",f"[error] Send {data} failed: {e}"))
+
     def send_signed(self, data):
         self.recv_queue.put(("warn",f"[Depricated] Signed send request received"))
 

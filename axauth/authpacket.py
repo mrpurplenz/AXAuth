@@ -29,6 +29,9 @@ class AuthPacket:
         signature = private_key.sign(data)
         self.signature_b64 = base64.b64encode(signature).decode("utf-8")
 
+    def has_signature(self):
+        return self.signature_b64 is not None
+
     def is_valid(self, public_key: Ed25519PublicKey) -> bool:
         if not self.signature_b64:
             return False
@@ -57,17 +60,21 @@ class AuthPacket:
                 f"sig:{self.signature_b64}\n"
                 f"from:{self.callsign}\n"
                 f"msg:\n{self.message.strip()}\n"
-                f"{END_MARKER}"
+                f"{END_MARKER}\n"
             )
         else:
             return f"{self.message.strip()}\n"
 
     @classmethod
     def from_text(cls, text: str):
-        if not text.strip().startswith(BEGIN_MARKER):
-            raise ValueError("Invalid Chattervox packet format (missing header).")
-        if not text.strip().endswith(END_MARKER):
-            raise ValueError("Invalid Chattervox packet format (missing footer).")
+        if not text.strip().startswith(BEGIN_MARKER) or not text.strip().endswith(END_MARKER):
+            pkt = cls(
+                callsign=None,
+                message=text.strip(),
+                version=PROTOCOL_VERSION,
+            )
+            pkt.signature_b64 = None
+            return pkt
 
         lines = text.strip().splitlines()
         header_data = {}
@@ -93,8 +100,26 @@ class AuthPacket:
             message="\n".join(message_lines),
             version=header_data.get("version", PROTOCOL_VERSION),
         )
-        pkt.signature_b64 = header_data.get("signature")
+        pkt.signature_b64 = header_data.get("signature") 
         return pkt
+
+    @classmethod
+    def from_data(cls, data: bytes):
+        try:
+            text = data.decode('utf-8')
+        except UnicodeDecodeError:
+            text = data.decode('utf-8', errors='replace')
+
+        if not text.strip().startswith(BEGIN_MARKER) or not text.strip().endswith(END_MARKER):
+            # Unsigned message — construct with defaults, set signature later
+            pkt = cls(
+                callsign=None,
+                message=text.strip(),
+                version=PROTOCOL_VERSION
+            )
+            pkt.signature_b64 = None
+            return pkt
+        return cls.from_text(text)
 
     def check_version(self):
         if self.version != PROTOCOL_VERSION:

@@ -8,10 +8,21 @@ from axsocket import start_ax25_socket_connection
 from authpacket import AuthPacket
 from blessed import Terminal
 import time
+from textwrap import wrap
 
 VERSION = 1.0
 USER_CONFIG_PATH = os.path.expanduser("~/.config/axauth/axauth.conf")
 DEFAULT_CONFIG_PATH = "axauth/axauth_default.conf"
+
+#Definitions:
+#local_call = this stations callsign
+#local_ssid = this stations ssid
+#local_peer = this stations callsign-ssid
+#remote_call =  the remote stations callsign
+#remote_ssid = the remote stations ssid
+#current_peer = the callsign-ssid of the session station
+
+
 
 term = Terminal()
 def render_terminal(current_peer, signing_enabled, message_stack, log_stack, term):
@@ -28,6 +39,7 @@ def render_terminal(current_peer, signing_enabled, message_stack, log_stack, ter
         "recv_verified": term.green,
         "system": term.magenta
     }
+
     log_colour_map = {
         "unconnected_not_signing": term.orange,
         "unconnected_signing": term.yellow,
@@ -61,17 +73,15 @@ def render_terminal(current_peer, signing_enabled, message_stack, log_stack, ter
     PROMPT_START_Y     = LOG_START_Y + LOG_Y
 
     def draw_header(current_peer = None, signing_enabled = True):
-        call_label = current_peer or ' -------- '
+        peer_label = current_peer or ' -------- '
         signing_colour = term.red
         sign_string = "OFF"
         if signing_enabled:
             signing_colour = term.green
             sign_string = "ON"
         author_string = "| AXAuth by ZL2DRS | Signing "
-        header_text_len = len(call_label + author_string + sign_string)
-        print(term.move_yx(0,0) + term.on_white + term.black + call_label + author_string + signing_colour + sign_string + term.clear_eol)
-
-    from textwrap import wrap
+        header_text_len = len(peer_label + author_string + sign_string)
+        print(term.move_yx(0,0) + term.on_white + term.black + peer_label + author_string + signing_colour + sign_string + term.clear_eol)
 
     def draw_message_stack(message_stack):
         print(term.move_yx(0, 0))
@@ -182,13 +192,14 @@ def process_input(line, local_peer, message_stack, session, signing_enabled, cur
         return "exit", message_stack, session, signing_enabled, current_peer
     elif line.startswith("/connect"):
         try:
-            _, call_ssid = line.split(maxsplit=1)
-            remote_call, remote_ssid = call_ssid.split('-')
+            _, next_current_peer = line.split(maxsplit=1)
+            remote_call, remote_ssid = next_current_peer.split('-')
         except ValueError:
             message_stack.append(("error","[error] Usage: /connect CALLSIGN-SSID"))
             #continue
         try:
             current_peer = remote_call+'-'+remote_ssid
+            #CREATE CONNECTION SESSION
             session = connect_to_peer(local_peer, current_peer)
             message_stack.append(("info", f"[info] Connected to {current_peer}"))
         except ValueError:
@@ -214,21 +225,16 @@ def process_input(line, local_peer, message_stack, session, signing_enabled, cur
         return "signing_toggle", message_stack, session, signing_enabled, current_peer
     elif line and session:
         #Sending data to the connected session
-        if signing_enabled:
+        message_status = "send_signed"
+        if not signing_enabled:
+            message_status = "send_unsigned"
+        if True:
             ###attempt to sign the line here or return error
             try:
-                #session.send_signed((line+"\r").encode("utf-8"))
+                local_call, local_ssid = local_peer.split('-')
                 packet = AuthPacket(local_call, line)
                 session.send_packet(packet,signing_enabled)
-                message_stack.append(("send_signed", f"[>{current_peer or 'unproto'}] {line}"))
-            except BrokenPipeError:
-                message_stack.append(("error",f"[error] Connection lost."))
-                session = None
-                current_peer = None
-        else:
-            try:
-                session.send((line+"\r").encode("utf-8"))
-                message_stack.append(("send_unsigned", f"[>{current_peer or 'unproto'}] {line}"))
+                message_stack.append((message_status, f"[>{current_peer or 'unproto'}] {line}"))
             except BrokenPipeError:
                 message_stack.append(("error",f"[error] Connection lost."))
                 session = None
