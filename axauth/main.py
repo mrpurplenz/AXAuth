@@ -5,6 +5,7 @@ import configparser
 import os
 import readline
 from axsocket import start_ax25_socket_connection
+from authpacket import AuthPacket
 from blessed import Terminal
 import time
 
@@ -173,21 +174,28 @@ def fetch_input(input_buffer):
         input_buffer += ch
     return input_buffer, process_flag
 
-def process_input(line,local_call,message_stack,session,signing_enabled,current_peer):
+def process_input(line, local_peer, message_stack, session, signing_enabled, current_peer):
     if line == "/exit":
         if session:
             session.close()
         message_stack.append(("system","Goodbye."))
-        return "exit", message_stack, session
+        return "exit", message_stack, session, signing_enabled, current_peer
     elif line.startswith("/connect"):
         try:
-            _, call = line.split(maxsplit=1)
+            _, call_ssid = line.split(maxsplit=1)
+            remote_call, remote_ssid = call_ssid.split('-')
         except ValueError:
-            message_stack.append(("error","[error] Usage: /connect CALLSIGN"))
+            message_stack.append(("error","[error] Usage: /connect CALLSIGN-SSID"))
             #continue
-        current_peer = call
-        session = connect_to_peer(local_call, call)
-        message_stack.append(("info", f"[info] Connected to {call}"))
+        try:
+            current_peer = remote_call+'-'+remote_ssid
+            session = connect_to_peer(local_peer, current_peer)
+            message_stack.append(("info", f"[info] Connected to {current_peer}"))
+        except ValueError:
+            session = None
+            current_peer = None
+            message_stack.append(("error",f"[error] Failed to connect to {current_peer}"))
+        return "connection", message_stack, session, signing_enabled, current_peer
     elif line.startswith("/sign"):
         try:
             _, state = line.split(maxsplit=1)
@@ -203,12 +211,15 @@ def process_input(line,local_call,message_stack,session,signing_enabled,current_
             message_stack.append(("error","[error] Usage: /sign on|off"))
             #continue
         message_stack.append(("info", f"[info] Signing {'enabled' if signing_enabled else 'disabled'}"))
+        return "signing_toggle", message_stack, session, signing_enabled, current_peer
     elif line and session:
         #Sending data to the connected session
         if signing_enabled:
             ###attempt to sign the line here or return error
             try:
-                session.send_signed((line+"\r").encode("utf-8"))
+                #session.send_signed((line+"\r").encode("utf-8"))
+                packet = AuthPacket(local_call, line)
+                session.send_packet(packet,signing_enabled)
                 message_stack.append(("send_signed", f"[>{current_peer or 'unproto'}] {line}"))
             except BrokenPipeError:
                 message_stack.append(("error",f"[error] Connection lost."))
@@ -222,6 +233,7 @@ def process_input(line,local_call,message_stack,session,signing_enabled,current_
                 message_stack.append(("error",f"[error] Connection lost."))
                 session = None
                 current_peer = None
+        return "text_sent_to_session", message_stack, session, signing_enabled, current_peer
     elif line:
         #Sending text as unproto (NOT YET IMPLIMENTED)
         #TRY TO SEND UNPROTO MESSAGE THEN IF SUCCESSFUL POST THE FOLLOWING LINE
@@ -231,11 +243,7 @@ def process_input(line,local_call,message_stack,session,signing_enabled,current_
             message_stack.append(("send_unsigned", f"[>{current_peer or 'unproto'}] {line}"))
         #IF unproto message not possible post the following warning
         message_stack.append(("warn", "[warn*] Unproto not available yet and no active session. Enable unproto or /connect CALLSIGN first."))
-
-    if session:
-        return "connected", message_stack, session
-    else:
-        return "Success", message_stack, session
+        return "text_sent_as_unproto", message_stack, session, signing_enabled, current_peer
 
 def run_peer_terminal(local_call="N0CALL"):
     current_peer = None
@@ -250,30 +258,20 @@ def run_peer_terminal(local_call="N0CALL"):
     input_string = ""
     displayed_input = ""
 
-    #message_stack.append(("info","information message"))
-    #message_stack.append(("system","system message"))
-    #log_stack.append(("unconnected_not_signing","unconnected and not signing input"))
-    #log_stack.append(("unconnected_signing", "unconnected and signing input"))
-    #log_stack.append(("connected_not_signing", "A connected but not signing input"))
-    #log_stack.append(("connected_signing", "Signing and connected to a station"))
-
     with term.fullscreen(), term.cbreak():
         print(term.clear)
         input_buffer=''
         print(term.hide_cursor(), end='', flush=True)
         while True:
-            #print(term.home + term.clear)
+            #Render all expet prompt area
             prompt_len, PROMPT_START_Y = render_terminal(current_peer, signing_enabled, message_stack, log_stack, term)
 
-            #draw_header(current_peer, signing_enabled)
-            #draw_message_stack(message_stack)
-            #draw_separator()
-            #draw_log_stack(log_stack)
-            #prompt_len = draw_prompt(current_peer,signing_enabled)
-
+            #Drain the input inkey
             input_buffer, process_flag = fetch_input(input_buffer)
+
+            #make changes to display
             if process_flag:
-                # Determine status key
+                #Move complete entrys to log and add a status
                 if current_peer:
                     if signing_enabled:
                         status = "connected_signing"
@@ -285,13 +283,17 @@ def run_peer_terminal(local_call="N0CALL"):
                     else:
                         status = "unconnected_not_signing"
                 log_stack.append((status, input_buffer))
-                result, message_stack, session = process_input(input_buffer,local_call,message_stack,session,signing_enabled,current_peer)
+                result, message_stack, session, signing_enabled, current_peer = process_input(input_buffer,local_call,message_stack,session,signing_enabled,current_peer)
                 if result == "exit":
                     break
-                if result == "connected":
+                if session:
                     current_peer = session.remote_call
+                else:
+                    current_peer = None
+                #Reset input buffer
                 input_buffer=""
 
+            #render input activity
             displayed_input = render_input_buffer(input_buffer, prompt_len, displayed_input, PROMPT_START_Y)
 
             #Drain the session thread

@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Optional
 from crypto import load_private_key, sign_message
-
+from authpacket import AuthPacket
 #KEYRING_PATH = Path.home() / ".config" / "axauth" / "keys.json"
 
 #def load_keyring() -> dict[str, str]:
@@ -36,7 +36,7 @@ class AX25Session:
         #self.keyring = load_keyring()
         self.private_key = load_private_key()
     def is_signed(self, message: str) -> bool:
-        self.recv_queue.put(("info","[info] Determining if received messaged is signed"))
+        self.recv_queue.put(("warn","[depricated, use authpacket] Determining if received messaged is signed"))
         return "-----BEGIN CHATSIG-----" in message and "-----END CHATSIG-----" in message
 
     #def extract_signature_and_payload(message: str) -> tuple[str, str]:
@@ -63,7 +63,7 @@ class AX25Session:
         except Exception:
             return False
 
-    def normalize_message(self, data: bytes) -> tuple[str, str]:
+    def normalize_text(self, data: bytes) -> tuple[str, str]:
         text = data.decode("utf-8", errors="replace")
         normal_text = text.replace('\r\n', '\n').replace('\r', '\n').strip()
         #lines = normal_text.split('\n')
@@ -120,9 +120,21 @@ class AX25Session:
                     self.recv_queue.put(("info","[info] Connection closed by remote."))
                     self.running = False
                     break
-                messages = self.normalize_message(data)
-                for message in messages:
-                    self.recv_queue.put(message)
+                #OLD MESSAGE HANDLING
+                #messages = self.normalize_message(data)
+
+                #authpacket message handling
+                packet = AuthPacket.from_text(data.decode("utf-8", errors="replace"))
+                if packet.is_signed():
+                    callsign = packet.callsign()
+                    if packet.have_public_key(callsign):
+                        public_key = packet.public_key()
+                        if packet.is_valid(public_key):
+                           self.recv_queue.put(("recv_signed_verified", packet.message))
+
+
+
+
             except OSError as e:
                 if e.errno == errno.ENOTCONN:
                     self.recv_queue.put(("info","[info] Remote disconnected (socket closed)."))
@@ -135,6 +147,14 @@ class AX25Session:
                 self.running = False
                 break
 
+    def send_packet(self, packet, signing):
+        self.recv_queue.put(("info",f"[info] Send request received"))
+        packet_data = packet.to_data(signing)
+        try:
+            self.sock.send(packet_data)
+        except Exception as e:
+            self.recv_queue.put(("error",f"[error] Send {packet.to_text(False)} failed: {e}"))
+
     def send(self, data):
         self.recv_queue.put(("info",f"[info] Send request received"))
         try:
@@ -143,7 +163,7 @@ class AX25Session:
         except Exception as e:
             self.recv_queue.put(("error",f"[error] Send {data} failed: {e}"))
     def send_signed(self, data):
-        self.recv_queue.put(("info",f"[info] Signed send request received"))
+        self.recv_queue.put(("warn",f"[Depricated] Signed send request received"))
 
         # Sign the data
         signature = sign_message(data, self.private_key)

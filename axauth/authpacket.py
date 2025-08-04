@@ -42,6 +42,10 @@ class AuthPacket:
     def _signing_string(self) -> str:
         return f"ver:{self.version}\nfrom:{self.callsign}\nmsg:\n{self.message.strip()}"
 
+    def to_data(self, signed: bool):
+        text = self.to_text(signed)
+        return text.encode("utf-8")
+
     def to_text(self, signed: bool) -> str:
         if signed:
             self.sign(load_private_key(PRIVATE_KEY_PATH))
