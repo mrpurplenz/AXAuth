@@ -37,27 +37,48 @@ def main():
 
             buffer += data
 
+            packet_call          = None
+            packet_signed        = False
+            packet_signature     = None
+            packet_public_exists = False
+            packet_verified      = False
+
             # Process line if newline received
+            lines_to_process=[]
             if data in ('\n', '\r'):
                 line = buffer.strip()
                 buffer = ""
-
                 if in_packet:
                     packet_lines.append(line)
                     if line == END_MARKER:
                         try:
                             full_packet = "\n".join(packet_lines)
                             pkt = AuthPacket.from_text(full_packet)
-                            flush_print(f"[recv_verified] {pkt.callsign}: {pkt.message}", False)
+                            flush_print(f"[recv_verified] {pkt.callsign}: {pkt.message}", signing)
+                            lines_to_process = listify(pkt.message)
+
+                            packet_call          = pkt.callsign
+                            packet_signed        = pkt.has_signature()
+                            if packet_signed:
+                                packet_signature = pkt.signature_b64
+                            packet_public_exits  = pkt.has_public()
+                            packet_verified      = pkt.is_valid()
+
                         except Exception as e:
-                            flush_print(f"[recv_signed_failed_verification] Failed to parse signed packet: {e}", False)
+                            flush_print(f"[recv_signed_failed_verification] Failed to parse signed packet: {e}", signing)
                         in_packet = False
                         packet_lines = []
                 else:
                     if line == BEGIN_MARKER:
                         in_packet = True
                         packet_lines = [line]
-                    elif line.lower() == "quit":
+                    lines_to_process = [line]
+                    #Process unsigned lines
+            if len(lines_to_process)>0:
+                quit_signal = False
+                for line in lines_to_process:
+                    if line.lower() == "quit":
+                        quit_signal = True
                         break
                     elif line.lower() == "sign":
                         signing = True
@@ -73,6 +94,8 @@ def main():
                         flush_print(help_msg, signing)
                     else:
                         flush_print(f"[recv_unsigned] Unknown command or unsigned message: {line}", False)
+                if quit_signal:
+                    break
         except BlockingIOError:
             time.sleep(0.05)
             continue
