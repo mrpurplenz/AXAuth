@@ -9,6 +9,12 @@ CALL = "ZL2DRS"
 SSID = "11"
 CALL_SSID = CALL + "-" + SSID
 
+def listify(text):
+    normal_text = text.replace('\r\n', '\n').replace('\r', '\n').strip()
+    lines = normal_text.split('\n')
+    output = []
+    return output.extend(lines)
+
 def flush_print(message_string, signing):
     packet = AuthPacket(CALL, message_string)
     print(packet.to_text(signing), flush=True)
@@ -46,6 +52,7 @@ def main():
             # Process line if newline received
             lines_to_process=[]
             if data in ('\n', '\r'):
+                flush_print("[received data]",False)
                 line = buffer.strip()
                 buffer = ""
                 if in_packet:
@@ -70,6 +77,7 @@ def main():
                         packet_lines = []
                 else:
                     if line == BEGIN_MARKER:
+                        flush_print("[signed packet 'begin' detected]",False)
                         in_packet = True
                         packet_lines = [line]
                     lines_to_process = [line]
