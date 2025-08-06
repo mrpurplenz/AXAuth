@@ -125,7 +125,7 @@ class AX25Session:
                 #messages = self.normalize_message(data)
 
                 #authpacket message handling
-                self.recv_queue.put(("info", "[Info] Packet received - decoding..."))
+                #self.recv_queue.put(("info", "[Info] Packet received - decoding..."))
                 packet = AuthPacket.from_text(data.decode("utf-8", errors="replace"))
                 if packet.has_signature():
                     callsign = packet.callsign()

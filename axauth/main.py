@@ -83,7 +83,37 @@ def render_terminal(current_peer, signing_enabled, message_stack, log_stack, ter
         header_text_len = len(peer_label + author_string + sign_string)
         print(term.move_yx(0,0) + term.on_white + term.black + peer_label + author_string + signing_colour + sign_string + term.clear_eol)
 
-    def draw_message_stack(message_stack):
+    def draw_message_stack(message_stack,MESSAGES_X,MESSAGES_Y):
+        print(term.move_yx(0, 0))
+        visible_rows = []
+
+        # First, wrap each message into lines that fit terminal width
+        for msgt in message_stack:
+            status, text = msgt
+            #prefix = f"{callsign}: "
+            ansi_colour = message_colour_map[status]
+
+            # Wrap text (taking prefix into account for first line)
+            wrapped_lines = wrap(text, width=MESSAGES_X)
+            if not wrapped_lines:
+                wrapped_lines = [""]
+
+            # Build first and subsequent lines
+            first_line = ansi_colour +  wrapped_lines[0]
+            other_lines = [ansi_colour + line for line in wrapped_lines[1:]]
+
+            #Restack the now-wrapped messages
+            visible_rows.extend([first_line] + other_lines)
+
+        # Trim to fit available space
+        rows_to_draw = visible_rows[-MESSAGES_Y:]
+
+        # Now render the lines on screen
+        for i, line in enumerate(rows_to_draw):
+            print(term.move_yx(MESSAGE_START_Y + i, 0) + term.normal + term.clear_eol + line.ljust(MESSAGES_X))
+
+
+    def dep_draw_message_stack(message_stack):
         print(term.move_yx(0, 0))
         visible_rows = []
 
@@ -154,7 +184,8 @@ def render_terminal(current_peer, signing_enabled, message_stack, log_stack, ter
 
     #Conduct rendering in turn
     draw_header(current_peer, signing_enabled)
-    draw_message_stack(message_stack)
+    #draw_message_stack(message_stack)
+    draw_message_stack(message_stack,MESSAGES_X,MESSAGES_Y)
     draw_separator()
     draw_log_stack(log_stack)
     prompt_len = draw_prompt(current_peer,signing_enabled)
@@ -162,14 +193,50 @@ def render_terminal(current_peer, signing_enabled, message_stack, log_stack, ter
     return prompt_len, PROMPT_START_Y
 
 def render_input_buffer(input_buffer, prompt_len, displayed_input, PROMPT_START_Y):
+    #print(term.hide_cursor(), end='', flush=True)
+    cursor_X = prompt_len
     if input_buffer != displayed_input:
         print(term.move_yx(0,0))
         print(term.move_yx(PROMPT_START_Y, prompt_len) + input_buffer + term.clear_eol, end='', flush=True)
+        print(term.normal_cursor(), end='', flush=True)
         displayed_input = input_buffer
-    return displayed_input
+        cursor_X = prompt_len+len(displayed_input)
+    return displayed_input, cursor_X
+
+def fetch_input(input_buffer, log_stack, log_index, unsaved_input):
+    #print(term.normal_cursor(), end='', flush=True)
+    process_flag = False
+    ch = term.inkey(timeout=0.1)
+    print(term.hide_cursor(), end='', flush=True)
+    if ch.name == 'KEY_ENTER':
+        process_flag = True
+        # Reset log browsing state
+        log_index = len(log_stack)
+        unsaved_input = ""
+    elif ch.name == 'KEY_BACKSPACE':
+        if input_buffer:
+            input_buffer = input_buffer[:-1]
+    elif ch.name == 'KEY_UP':
+        if log_stack and log_index > 0:
+            if log_index == len(log_stack):
+                unsaved_input = input_buffer  # Save current input before overwriting
+            log_index -= 1
+            input_buffer = log_stack[log_index][1]
+    elif ch.name == 'KEY_DOWN':
+        if log_index < len(log_stack) - 1:
+            log_index += 1
+            input_buffer = log_stack[log_index][1]
+        elif log_index == len(log_stack) - 1:
+            log_index += 1
+            input_buffer = unsaved_input  # Restore unsaved input
+    elif ch.is_sequence:
+        pass  # Ignore other sequences
+    else:
+        input_buffer += ch
+    return input_buffer, process_flag, log_index, unsaved_input
 
 
-def fetch_input(input_buffer):
+def dep_fetch_input(input_buffer,log_stack):
     process_flag = False
     ch = term.inkey(timeout=0.1)
     if ch.name == 'KEY_ENTER':
@@ -260,6 +327,8 @@ def run_peer_terminal(local_call="N0CALL"):
     message_stack = []
     input_log = []
     log_stack = []
+    log_index = 0
+    unsaved_input = ""
     prompt = ">"
     input_string = ""
     displayed_input = ""
@@ -270,11 +339,13 @@ def run_peer_terminal(local_call="N0CALL"):
         print(term.hide_cursor(), end='', flush=True)
         while True:
             #Render all expet prompt area
+            #print(term.hide_cursor(), end='', flush=True)
             prompt_len, PROMPT_START_Y = render_terminal(current_peer, signing_enabled, message_stack, log_stack, term)
-
+            #print(term.normal_cursor(), end='', flush=True)
             #Drain the input inkey
-            input_buffer, process_flag = fetch_input(input_buffer)
-
+            #input_buffer, process_flag = fetch_input(input_buffer,log_stack)
+            input_buffer, process_flag, log_index, unsaved_input = fetch_input(input_buffer, log_stack, log_index, unsaved_input)
+            print(term.hide_cursor(), end='', flush=True)
             #make changes to display
             if process_flag:
                 #Move complete entrys to log and add a status
@@ -289,19 +360,25 @@ def run_peer_terminal(local_call="N0CALL"):
                     else:
                         status = "unconnected_not_signing"
                 log_stack.append((status, input_buffer))
-                result, message_stack, session, signing_enabled, current_peer = process_input(input_buffer,local_call,message_stack,session,signing_enabled,current_peer)
+
+                #Process the line
+                result, message_stack, session, signing_enabled, current_peer = process_input(input_buffer, local_call,message_stack,session,signing_enabled,current_peer)
+
                 if result == "exit":
                     break
                 if session:
                     current_peer = session.remote_call
                 else:
                     current_peer = None
-                #Reset input buffer
+                #Reset input buffers
                 input_buffer=""
+                log_index = len(log_stack)
+                unsaved_input = ""
 
             #render input activity
-            displayed_input = render_input_buffer(input_buffer, prompt_len, displayed_input, PROMPT_START_Y)
-
+            cursor_X = prompt_len
+            displayed_input, cursor_X = render_input_buffer(input_buffer, prompt_len, displayed_input, PROMPT_START_Y)
+            print(term.move_yx(PROMPT_START_Y, cursor_X) + term.normal_cursor(), end='', flush=True)
             #Drain the session thread
             if session and session.has_queue():
                 while session and session.has_queue():
