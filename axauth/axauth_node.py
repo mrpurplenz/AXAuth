@@ -16,8 +16,13 @@ def listify(text):
     return output.extend(lines)
 
 def flush_print(message_string, signing):
-    packet = AuthPacket(CALL, message_string)
-    print(packet.to_text(signing), flush=True)
+    try:
+        packet = AuthPacket(CALL, message_string)
+        print(packet.to_text(signing), flush=True)
+        packet = None
+    except Exception as e:
+        print(f"[Error] Failed to create output packet packet: {e}", flush=True)
+
 
 def set_nonblocking(fd):
     fl = fcntl.fcntl(fd, fcntl.F_GETFL)
@@ -31,7 +36,9 @@ def main():
 
     flush_print("Hello there from ZL2DRS-11! Welcome to the world's first authenticating AX.25 node (Still under construction)", signing)
     flush_print("Type 'quit' to disconnect, type 'help' for a list of instructions", signing)
-
+    flush_print("Third line of data", signing)
+    flush_print("Fourth line of data", False)
+    flush_print("Fifth line of data", True)
     set_nonblocking(sys.stdin.fileno())
 
     while True:
@@ -56,9 +63,11 @@ def main():
                 line = buffer.strip()
                 buffer = ""
                 if in_packet:
+                    flush_print("[working on packet]",False)
                     packet_lines.append(line)
                     if line == END_MARKER:
                         try:
+                            flush_print("[packet closed]",False)
                             full_packet = "\n".join(packet_lines)
                             pkt = AuthPacket.from_text(full_packet)
                             flush_print(f"[recv_verified] {pkt.callsign}: {pkt.message}", signing)
@@ -75,14 +84,20 @@ def main():
                             flush_print(f"[recv_signed_failed_verification] Failed to parse signed packet: {e}", signing)
                         in_packet = False
                         packet_lines = []
+                    flush_print("[still decoding packet]",False)
                 else:
                     if line == BEGIN_MARKER:
-                        flush_print("[signed packet 'begin' detected]",False)
+                        flush_print("[signed packet 'begin' detected (1)]",False)
+                        flush_print("[signed packet 'begin' detected (2)]",False)
+                        flush_print("[beginning consumption  of wired data]",False)
                         in_packet = True
+                        flush_print("[will read lines to packet for later decoding]",False)
                         packet_lines = [line]
+                        flush_print("[added lines to packet]",False)
                     lines_to_process = [line]
                     #Process unsigned lines
             if len(lines_to_process)>0:
+                flush_print("[trying to process]",False)
                 quit_signal = False
                 for line in lines_to_process:
                     if line.lower() == "quit":
