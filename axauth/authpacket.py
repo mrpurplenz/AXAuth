@@ -32,6 +32,10 @@ class AuthPacket:
     def has_signature(self):
         return self.signature_b64 is not None
 
+    def has_public_key(self):
+        keyring = load_keyring()
+        return self.callsign.upper() in keyring
+
     def is_valid(self, public_key: Ed25519PublicKey) -> bool:
         if not self.signature_b64:
             return False

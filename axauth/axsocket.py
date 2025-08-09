@@ -12,6 +12,24 @@ from pathlib import Path
 from typing import Optional
 from crypto import load_private_key, sign_message
 from authpacket import AuthPacket
+
+
+#message_colour_map = {
+#    "info": term.cyan,
+#    "error": term.red,
+#    "warn": term.yellow,
+#    "send_signed": term.green,
+#    "send_unsigned": term.white,
+#    "recv_unsigned": term.yellow,
+#    "recv_signed_nopub": term.orange,
+#    "recv_signed_failed_verification": term.red,
+#    "recv_verified": term.green,
+#    "system": term.magenta
+#}
+
+
+
+
 #KEYRING_PATH = Path.home() / ".config" / "axauth" / "keys.json"
 
 #def load_keyring() -> dict[str, str]:
@@ -125,14 +143,23 @@ class AX25Session:
                 #messages = self.normalize_message(data)
 
                 #authpacket message handling
-                #self.recv_queue.put(("info", "[Info] Packet received - decoding..."))
+                self.recv_queue.put(("info", "[Info] Packet received - decoding..."))
                 packet = AuthPacket.from_text(data.decode("utf-8", errors="replace"))
+                self.recv_queue.put(("info", f"[Info] Packet version used by remote station: {packet.version}"))
                 if packet.has_signature():
-                    callsign = packet.callsign()
-                    if packet.have_public_key(callsign):
+                    self.recv_queue.put(("info", "[Info] Packet signature detected - identifying sender..."))
+                    callsign = packet.callsign
+                    self.recv_queue.put(("info", f"[Info] Packet sender identified as {callsign}. Locating key..."))
+                    if packet.has_public_key():
+                        self.recv_queue.put(("info", f"[Info] Local copy of publc key for {callsign} Identified. Obtaining..."))
                         public_key = packet.public_key()
+                        self.recv_queue.put(("info", f"[Info] Local copy of publc key for {callsign} Obtained. Verifying..."))
                         if packet.is_valid(public_key):
                            self.recv_queue.put(("recv_signed_verified", packet.message))
+                        else:
+                           self.recv_queue.put(("recv_signed_failed_verification", packet.message))
+                    else:
+                        self.recv_queue.put(("recv_signed_nopub", packet.message))
                 else:
                     self.recv_queue.put(("recv_unsigned", packet.message))
 
@@ -140,7 +167,7 @@ class AX25Session:
                 if e.errno == errno.ENOTCONN:
                     self.recv_queue.put(("info","[info] Remote disconnected (socket closed)."))
                 else:
-                    self.recv_queue.put(("info",f"[error] Receive error: {e}"))
+                    self.recv_queue.put(("error",f"[error] Receive error: {e}"))
                 self.running = False
                 break
             except Exception as e:
