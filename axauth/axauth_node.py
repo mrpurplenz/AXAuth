@@ -9,17 +9,19 @@ CALL = "ZL2DRS"
 SSID = "11"
 CALL_SSID = CALL + "-" + SSID
 
+
 def listify(text):
     normal_text = text.replace('\r\n', '\n').replace('\r', '\n').strip()
     lines = normal_text.split('\n')
-    output = []
     return lines
+
 
 def flush_print(message_string, signing):
     try:
-        packet = AuthPacket(CALL, message_string)
-        print(packet.to_text(signing), flush=True)
-        packet = None
+        packet         = AuthPacket(CALL, message_string)
+        signed_message = packet.to_text(signing).rstrip()
+        print(signed_message, flush=True)
+        packet         = None
     except Exception as e:
         print(f"[Error] Failed to create output packet packet: {e}", flush=True)
 
@@ -28,9 +30,10 @@ def set_nonblocking(fd):
     fl = fcntl.fcntl(fd, fcntl.F_GETFL)
     fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
+
 def main():
     signing = False
-    in_packet = False
+    #in_packet = False
     signed_packet = False
     packet_lines = []
     buffer = ""
@@ -125,14 +128,14 @@ def main():
             if len(string_to_process)>0:
                 lines_to_process = listify(string_to_process)
                 string_to_process=""
-                flush_print("[trying to process]",False)
+                #flush_print("[trying to process]",False)
                 quit_signal = False
                 for line in lines_to_process:
                     if line.lower() == "quit":
                         quit_signal = True
                         break
                     elif line.lower() == "sign":
-                        signing = True
+                        signing = not(signing)
                     elif line.lower() == "help":
                         help_msg = (
                             "help : This list of commands\r\n"
@@ -140,7 +143,7 @@ def main():
                             "chat : Go to the authenticated chat room (UNDERCONSTRUCTION)\r\n"
                             "hunt : Go on a hunt for the 'Authentic' treasure (UNDERCONSTRUCTION)\r\n"
                             "games: Open the authenticated games room (UNDERCONSTRUCTION)\r\n"
-                            "sign : Toggle node mode between signing outgoing messages (CURRENTLY UNDERCONSTRUCTION)\r\n"
+                            "sign : Toggle node mode between signing outgoing messages\r\n"
                         )
                         flush_print(help_msg, signing)
                     else:
