@@ -13,7 +13,7 @@ def listify(text):
     normal_text = text.replace('\r\n', '\n').replace('\r', '\n').strip()
     lines = normal_text.split('\n')
     output = []
-    return output.extend(lines)
+    return lines
 
 def flush_print(message_string, signing):
     try:
@@ -31,34 +31,58 @@ def set_nonblocking(fd):
 def main():
     signing = False
     in_packet = False
+    signed_packet = False
     packet_lines = []
     buffer = ""
 
     flush_print("Hello there from ZL2DRS-11! Welcome to the world's first authenticating AX.25 node (Still under construction)", signing)
     flush_print("Type 'quit' to disconnect, type 'help' for a list of instructions", signing)
-    flush_print("Third line of data", signing)
-    flush_print("Fourth line of data", False)
-    flush_print("Fifth line of data", True)
+    flush_print("This is how signed data will appear", True)
+    #flush_print("Fourth line of data", False)
+    #flush_print("Fifth line of data", True)
     set_nonblocking(sys.stdin.fileno())
 
+    string_to_process=""
+    incomplete_packet_string=""
     while True:
         try:
-            data = sys.stdin.read(1)
-            if not data:
+            create_packet = False
+            character = sys.stdin.read(1)
+            if not character:
                 time.sleep(0.1)
                 continue
 
-            buffer += data
+            buffer += character
 
-            packet_call          = None
-            packet_signed        = False
-            packet_signature     = None
-            packet_public_exists = False
-            packet_verified      = False
+            if BEGIN_MARKER in buffer:
+                if signed_packet == False:
+                    flush_print("Signed packet identified", True)
+                    incomplete_packet_string=buffer
+                    buffer=""
+                signed_packet = True
 
-            # Process line if newline received
-            lines_to_process=[]
-            if data in ('\n', '\r'):
+            #Read line_buffer to the current string
+            if character in ('\n', '\r'):
+                if not signed_packet:
+                    flush_print("Unsigned packet identified", False)
+                    flush_print("You sent:", False)
+                    flush_print(buffer, False)
+                    string_to_process += buffer
+                    buffer = ""
+                else:
+                    incomplete_packet_string += buffer
+                    if END_MARKER in buffer:
+                        create_packet = True
+                    buffer = ""
+
+            if create_packet:
+                pkt = AuthPacket.from_text(incomplete_packet_string)
+                flush_print("Signed packet decoded", True)
+                flush_print(pkt.message, True)
+                string_to_process = pkt.message
+
+            #if data in ('\n', '\r'):
+            if False:
                 flush_print("[received data]",False)
                 line = buffer.strip()
                 buffer = ""
@@ -87,7 +111,7 @@ def main():
                     flush_print("[still decoding packet]",False)
                 else:
                     if line == BEGIN_MARKER:
-                        flush_print("[signed packet 'begin' detected (1)]",False)
+                        flush_print("[signed packet 'begin''\n' detected (1)]",True)
                         flush_print("[signed packet 'begin' detected (2)]",False)
                         flush_print("[beginning consumption  of wired data]",False)
                         in_packet = True
@@ -96,7 +120,11 @@ def main():
                         flush_print("[added lines to packet]",False)
                     lines_to_process = [line]
                     #Process unsigned lines
-            if len(lines_to_process)>0:
+            
+            #if len(lines_to_process)>0:
+            if len(string_to_process)>0:
+                lines_to_process = listify(string_to_process)
+                string_to_process=""
                 flush_print("[trying to process]",False)
                 quit_signal = False
                 for line in lines_to_process:
