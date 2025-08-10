@@ -113,6 +113,8 @@ def render_terminal(current_peer, signing_enabled, message_stack, log_stack, ter
             print(term.move_yx(MESSAGE_START_Y + i, 0) + term.normal + term.clear_eol + line.ljust(MESSAGES_X))
 
 
+
+
     def dep_draw_message_stack(message_stack):
         print(term.move_yx(0, 0))
         visible_rows = []
@@ -159,7 +161,61 @@ def render_terminal(current_peer, signing_enabled, message_stack, log_stack, ter
             line_y = LOG_START_Y + num_blank_lines + i
             print(term.move_yx(line_y, 0) + term.clear_eol + ansi_colour + logt[1].ljust(MESSAGES_X))
 
-    def draw_separator():
+    def draw_separator(active_session="IDLE", sessions=None):
+        if sessions is None:
+            sessions = ["IDLE"]  # Default unproto session
+
+        max_sessions = 6
+        session_display = []
+        sep_len=0
+        for session in sessions[:max_sessions]:
+            session_text = f" {session} "
+            sep_len += len(session_text)
+            if session == active_session:
+                # Black on green for active
+                session_display.append(term.black_on_green + session_text + term.normal)
+            else:
+                # Black on white for inactive
+                session_display.append(term.black_on_white + session_text + term.normal)
+
+        status_bar = " ".join(session_display)
+
+        # Pad remainder of the line with black-on-white spaces
+        #remainder_width = SEPARATOR_X - len(status_bar)
+        #remainder_width += 16
+        #if remainder_width > 0:
+        #    status_bar += term.black_on_white + (" " * remainder_width) + term.normal
+
+        import re
+        ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
+        visible_len = sep_len
+        #visible_len = len(ansi_escape.sub('', status_bar))
+        padding_needed = SEPARATOR_X - visible_len
+        status_bar += term.black_on_white  (' ' * max(0, padding_needed))
+
+        # Print the bar (black/green or black/white) and then revert to white-on-black
+        print(term.move_yx(SEPARATOR_START_Y, 0) + term.normal + status_bar + term.normal)
+
+    def depricate_draw_separator(active_session="IDLE", sessions=None):
+        if sessions is None:
+            sessions = ["IDLE"]  # Default unproto session
+
+        max_sessions = 6
+        session_display = []
+
+        for session in sessions[:max_sessions]:
+            if session == active_session:
+                # Black on green for active
+                session_display.append(term.black_on_green + f" {session} " + term.normal)
+            else:
+                # Black on white for inactive
+                session_display.append(term.black_on_white + f" {session} " + term.normal)
+
+        status_bar = " ".join(session_display)
+
+        print(term.move_yx(SEPARATOR_START_Y, 0) + term.normal + status_bar.ljust(SEPARATOR_X, ' '))
+
+    def depricated_draw_separator():
         print(term.move_yx(0,0))
         print(term.move_yx(SEPARATOR_START_Y, 0) + term.normal + '-' * SEPARATOR_X)
 
