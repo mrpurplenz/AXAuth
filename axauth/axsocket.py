@@ -42,6 +42,7 @@ from authpacket import AuthPacket
 #    return keyring.get(callsign.upper())
 
 class AX25Session:
+    #Provides an ax.25 connected session
     def __init__(self, sock, remote_call, local_call):
         self.sock = sock
         self.remote_call = remote_call
@@ -184,6 +185,7 @@ class AX25Session:
             self.recv_queue.put(("error",f"[error] Send {packet.to_text(False)} failed: {e}"))
 
     def send(self, data):
+        #Depricated send protocol
         self.recv_queue.put(("warn",f"[info] basic sending is depricated, use auth packet"))
         try:
             #self.recv_queue.put(("info",f"[info] Send request received"))
